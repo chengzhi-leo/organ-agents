@@ -1,0 +1,95 @@
+body:
+  type: router
+  description: Whole-body physiological system
+  children:
+    - blood
+    - cardiovascular_system
+    - renal_system
+    - neuroendocrine_system
+
+cardiovascular_system:
+  type: router
+  description: Cardiac responses to circulating volume and neural drive, and vascular responses to
+    cardiac output, neural activity and circulating hormones
+  children:
+    - heart
+    - vasculature
+
+renal_system:
+  type: router
+  description: Renal responses to arterial pressure, sympathetic activity, aldosterone and ADH
+  children:
+    - kidney
+
+neuroendocrine_system:
+  type: router
+  description: Baroreflex, osmoreceptor, renin-angiotensin-aldosterone and ADH regulation
+  children:
+    - sympathetic
+    - raas
+    - adh
+
+blood:
+  type: leaf
+  description: Circulating blood volume and plasma composition, responding to urine output
+  knowledge: blood.md
+  variables:
+    - blood_volume
+    - plasma_osmolality
+
+heart:
+  type: leaf
+  description: Cardiac responses to circulating blood volume, venous return, filling and sympathetic
+    activity, determining stroke volume and cardiac output
+  knowledge: heart.md
+  variables:
+    - venous_return
+    - cardiac_filling
+    - stroke_volume
+    - heart_rate
+    - contractility
+    - cardiac_output
+
+vasculature:
+  type: leaf
+  description: Vascular responses to cardiac output, sympathetic activity, angiotensin II and ADH,
+    determining vascular tone, resistance and arterial pressure
+  knowledge: vasculature.md
+  variables:
+    - vascular_tone
+    - vascular_resistance
+    - arterial_pressure
+
+kidney:
+  type: leaf
+  description: Renal responses to arterial pressure, sympathetic activity, aldosterone and ADH,
+    determining perfusion, filtration, urine formation and renin release
+  knowledge: kidney.md
+  variables:
+    - renal_perfusion
+    - GFR
+    - urine_output
+    - renin
+
+sympathetic:
+  type: leaf
+  description: Baroreflex control of sympathetic activity in response to arterial pressure
+  knowledge: sympathetic.md
+  variables:
+    - sympathetic_activity
+
+raas:
+  type: leaf
+  description: Angiotensin II and aldosterone responses to circulating renin
+  knowledge: raas.md
+  variables:
+    - angiotensin_II
+    - aldosterone
+
+adh:
+  type: leaf
+  description: ADH and thirst responses to plasma osmolality, arterial pressure and angiotensin II
+  knowledge: adh.md
+  variables:
+    - ADH
+    - thirst

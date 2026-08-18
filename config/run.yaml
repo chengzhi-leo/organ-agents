@@ -1,0 +1,25 @@
+model:
+  provider: google
+  name: gemini-3.5-flash-lite
+  cache_system_prompts: false
+  cache_ttl: "3600s"
+
+generation:
+  temperature: 0.0
+  max_tokens: 1024
+
+routing:
+  mode: index
+  retries: 1
+
+simulation:
+  max_rounds: 6
+  max_llm_calls: 20
+  workers: 4
+
+debug:
+  verbose: true
+  save_trace: true
+
+output:
+  directory: outputs/logs/
