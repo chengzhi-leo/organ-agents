@@ -28,7 +28,8 @@ def main():
 
     llm = LLM(run_config)
     body = Body(load("config/body.yaml"), llm, ROOT / "knowledge")
-    router = Router(llm, body, run_config["routing"]["mode"], run_config["routing"]["retries"])
+    routing = run_config["routing"]
+    router = Router(llm, body, routing["mode"], routing["retries"], load(routing["routes"]))
     tracker = Tracker(run_config, ROOT, body, router)
     runner = Runner(body, router, tracker, llm, run_config["simulation"])
 

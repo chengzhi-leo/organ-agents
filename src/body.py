@@ -32,7 +32,6 @@ class Body:
         self.root = self._build("body", config, llm, knowledge_dir)
         self.links = {leaf.id: parse_links(leaf.knowledge) for leaf in self.leaves}
         self._check_links()
-        self.index = self._build_index()
 
     @property
     def leaves(self):
@@ -41,9 +40,6 @@ class Body:
     @property
     def registry(self):
         return sorted({variable for leaf in self.leaves for variable in leaf.variables})
-
-    def responders(self, variable):
-        return self.index.get(variable, [])
 
     def _build(self, node_id, config, llm, knowledge_dir):
         if node_id in self.nodes:
@@ -86,12 +82,3 @@ class Body:
                     raise ValueError(
                         f"'{leaf.id}' cites '{link.source}', which no component declares"
                     )
-
-    def _build_index(self):
-        index = {}
-        for leaf in self.leaves:
-            for link in self.links[leaf.id]:
-                responders = index.setdefault(link.source, [])
-                if leaf not in responders:
-                    responders.append(leaf)
-        return index

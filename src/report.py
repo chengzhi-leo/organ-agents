@@ -265,8 +265,8 @@ def _audit_section(run):
     return (
         f"<section><h2>Routing audit</h2><div class=\"card\"><table>"
         f"<tr><th>Change</th><th>Component</th><th>Status</th></tr>{rows}</table>"
-        f"<p class=\"note\">proposed — routed by the model but unsupported by any knowledge link, "
-        f"a candidate missing link. missed — implied by a knowledge link but not routed by the model."
+        f"<p class=\"note\">proposed — routed by the model but absent from the static route table. "
+        f"missed — listed in the static route table but not routed by the model."
         f"</p></div></section>"
     )
 

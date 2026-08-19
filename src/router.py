@@ -1,31 +1,28 @@
 from src.body import RouterNode
 from src.schemas import Dispatch
 
-MODES = ("index", "llm", "hybrid")
+MODES = ("llm", "index", "hybrid")
 
 SYSTEM_PROMPT = """
-You are the dispatcher in a multi-agent physiological simulation.
+You are the router in a multi-agent physiological simulation.
 
-You will receive a numbered list of physiological changes. For each change, identify every component in which at least one internal variable may change directly in response to that change.
+For each physiological change, select the agents that should receive it.
 
-Route only one causal step. Do not include a component if it would be affected only after another component responds first. Do not include a component merely because it owns the changed variable. Include it when the change drives another of its internal variables: heart_rate increased routes to heart, because heart_rate drives cardiac output inside the heart.
+Route a change to an agent if the change is relevant to that agent's
+physiological function or variables. A change may be routed to multiple agents.
 
-Use the component descriptions below as the authoritative definition of physiological dependencies. Do not invent additional effects, predict downstream propagation, or modify the input changes.
+Do not predict the agent's response or generate new physiological changes.
+The receiving agent will decide whether and how its own state changes.
 
-For example:
-
-blood_volume decreased → heart, because the heart responds directly to circulating blood volume. Do not also route it to components that may respond later to changes in cardiac output or arterial pressure.
-cardiac_output decreased → vasculature, because the vasculature responds directly to cardiac output.
-arterial_pressure decreased → kidney, sympathetic, and adh, because each responds directly to arterial pressure. Do not route it to vasculature merely because arterial pressure is one of its internal variables.
-
-Every input change must appear exactly once in the output, identified in "change" by its number in that list. Also copy its variable and level exactly. An empty agent_ids list is valid when no component responds directly.
+Return every input change exactly once. Copy its variable and level exactly.
+If no agent is relevant, return an empty agent_ids list.
 
 Return JSON only:
 
 {
   "assignments": [
     {
-      "change": 1,
+      "change": "index of the change",
       "variable": "string",
       "level": "decreased" | "increased",
       "agent_ids": ["component_name"]
@@ -41,13 +38,15 @@ Components:
 
 
 class Router:
-    def __init__(self, llm, body, mode, retries):
+    def __init__(self, llm, body, mode, retries, routes):
         if mode not in MODES:
             raise ValueError(f"unknown routing mode '{mode}'; expected one of {MODES}")
         self.llm = llm
         self.body = body
         self.mode = mode
         self.retries = retries
+        self.leaves = {leaf.id: leaf for leaf in body.leaves}
+        self.routes = self._resolve_routes(routes)
         self.cache = {}
         self.audit = []
         self.failures = []
@@ -59,17 +58,34 @@ class Router:
             self._resolve(pending)
         return {event.key: self.cache[event.key] for event in events}
 
+    def _resolve_routes(self, routes):
+        registry = set(self.body.registry)
+        resolved = {}
+        for variable, agent_ids in routes.items():
+            if variable not in registry:
+                raise ValueError(f"static route for '{variable}', which no component declares")
+            unknown = sorted(set(agent_ids) - self.leaves.keys())
+            if unknown:
+                raise ValueError(f"static route for '{variable}' names unknown agents {unknown}")
+            resolved[variable] = [self.leaves[id] for id in agent_ids]
+        return resolved
+
     def _resolve(self, pending):
-        derived = {key: self.body.responders(key[0]) for key in pending}
         if self.mode == "index":
-            self.cache.update(derived)
+            self.cache.update({key: self.routes.get(key[0], []) for key in pending})
             return
 
-        for key, leaves in self._ask(pending).items():
-            proposed = [leaf for leaf in leaves if leaf not in derived[key]]
-            missed = [leaf for leaf in derived[key] if leaf not in leaves]
+        routed = self._ask(pending)
+        if self.mode == "llm":
+            self.cache.update(routed)
+            return
+
+        for key, leaves in routed.items():
+            static = self.routes.get(key[0], [])
+            proposed = [leaf for leaf in leaves if leaf not in static]
+            missed = [leaf for leaf in static if leaf not in leaves]
             self.audit += self._entries(key, proposed, "proposed") + self._entries(key, missed, "missed")
-            self.cache[key] = leaves if self.mode == "llm" else derived[key] + proposed
+            self.cache[key] = static + proposed
 
     def _ask(self, pending):
         for attempt in range(self.retries + 1):
@@ -87,18 +103,17 @@ class Router:
         )
         prompt = f"Physiological changes to route:\n{changes}"
         completion = self.llm.generate(self.system_prompt, prompt, Dispatch)
-        assignments = completion.value.assignments
-        leaves = {leaf.id: leaf for leaf in self.body.leaves}
+        answers = [(self._number(item.change), item) for item in completion.value.assignments]
 
-        answered = sorted(item.change for item in assignments)
+        answered = sorted(number for number, _ in answers)
         if answered != list(range(1, len(pending) + 1)):
             raise ValueError(f"router answered changes {answered}, expected exactly 1..{len(pending)}")
-        unknown = sorted({id for item in assignments for id in item.agent_ids} - leaves.keys())
+        unknown = sorted({id for _, item in answers for id in item.agent_ids} - self.leaves.keys())
         if unknown:
             raise ValueError(f"router returned unknown agent ids {unknown}")
 
-        for item in assignments:
-            key = pending[item.change - 1]
+        for number, item in answers:
+            key = pending[number - 1]
             if (item.variable, item.level) != key:
                 self.audit.append({
                     "variable": key[0],
@@ -107,8 +122,15 @@ class Router:
                     "status": "mislabelled",
                 })
         return {
-            pending[item.change - 1]: [leaves[id] for id in item.agent_ids] for item in assignments
+            pending[number - 1]: [self.leaves[id] for id in item.agent_ids]
+            for number, item in answers
         }
+
+    @staticmethod
+    def _number(change):
+        if not change.strip().isdigit():
+            raise ValueError(f"router returned '{change}', which is not a change number")
+        return int(change.strip())
 
     @staticmethod
     def _entries(key, leaves, status):

@@ -1,6 +1,7 @@
 body:
   type: router
-  description: Whole-body physiological system
+  description: >-
+    Whole-body physiological organization across the represented systems.
   children:
     - blood
     - cardiovascular_system
@@ -9,21 +10,27 @@ body:
 
 cardiovascular_system:
   type: router
-  description: Cardiac responses to circulating volume and neural drive, and vascular responses to
-    cardiac output, neural activity and circulating hormones
+  description: >-
+    Cardiovascular physiology covering cardiac filling and pumping,
+    blood flow, vascular tone, systemic vascular resistance, and mean arterial pressure.
   children:
     - heart
     - vasculature
 
 renal_system:
   type: router
-  description: Renal responses to arterial pressure, sympathetic activity, aldosterone and ADH
+  description: >-
+    Renal physiology covering kidney perfusion, filtration,
+    urine production, and regulation of body fluid balance.
   children:
     - kidney
 
 neuroendocrine_system:
   type: router
-  description: Baroreflex, osmoreceptor, renin-angiotensin-aldosterone and ADH regulation
+  description: >-
+    Neural and hormonal regulation of cardiovascular and fluid homeostasis,
+    represented by sympathetic, renin-angiotensin-aldosterone,
+    and antidiuretic hormone systems.
   children:
     - sympathetic
     - raas
@@ -31,7 +38,9 @@ neuroendocrine_system:
 
 blood:
   type: leaf
-  description: Circulating blood volume and plasma composition, responding to urine output
+  description: >-
+    The fluid compartment circulating through the vessels, carrying
+    water and solutes around the body.
   knowledge: blood.md
   variables:
     - blood_volume
@@ -39,8 +48,9 @@ blood:
 
 heart:
   type: leaf
-  description: Cardiac responses to circulating blood volume, venous return, filling and sympathetic
-    activity, determining stroke volume and cardiac output
+  description: >-
+    Muscular pump that fills with the blood returning to it and ejects
+    that blood into the arteries.
   knowledge: heart.md
   variables:
     - venous_return
@@ -52,35 +62,42 @@ heart:
 
 vasculature:
   type: leaf
-  description: Vascular responses to cardiac output, sympathetic activity, angiotensin II and ADH,
-    determining vascular tone, resistance and arterial pressure
+  description: >-
+    Network of vessels carrying the blood ejected by the heart to the
+    tissues, setting the resistance it meets and the pressure it develops.
   knowledge: vasculature.md
   variables:
     - vascular_tone
-    - vascular_resistance
-    - arterial_pressure
+    - systemic_vascular_resistance
+    - mean_arterial_pressure
 
 kidney:
   type: leaf
-  description: Renal responses to arterial pressure, sympathetic activity, aldosterone and ADH,
-    determining perfusion, filtration, urine formation and renin release
+  description: >-
+    Organ perfused by arterial blood that filters it, reabsorbs solute
+    and water from the filtrate, and forms urine.
   knowledge: kidney.md
   variables:
     - renal_perfusion
     - GFR
+    - sodium_reabsorption
     - urine_output
     - renin
 
 sympathetic:
   type: leaf
-  description: Baroreflex control of sympathetic activity in response to arterial pressure
+  description: >-
+    Sympathetic branch of the autonomic nervous system, the fast neural
+    arm of circulatory control acting on the heart and the vessels.
   knowledge: sympathetic.md
   variables:
     - sympathetic_activity
 
 raas:
   type: leaf
-  description: Angiotensin II and aldosterone responses to circulating renin
+  description: >-
+    Endocrine cascade producing angiotensin II and aldosterone, the slow
+    hormonal arm of circulatory and fluid control.
   knowledge: raas.md
   variables:
     - angiotensin_II
@@ -88,8 +105,9 @@ raas:
 
 adh:
   type: leaf
-  description: ADH and thirst responses to plasma osmolality, arterial pressure and angiotensin II
+  description: >-
+    Hypothalamic-pituitary system secreting antidiuretic hormone, the
+    hormone governing how much water the body conserves.
   knowledge: adh.md
   variables:
     - ADH
-    - thirst

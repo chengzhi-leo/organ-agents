@@ -18,7 +18,7 @@ class Reaction(BaseModel):
 
 
 class Assignment(BaseModel):
-    change: int
+    change: str
     variable: str
     level: Level
     agent_ids: list[str]

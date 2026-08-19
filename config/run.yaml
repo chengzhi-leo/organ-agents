@@ -9,7 +9,8 @@ generation:
   max_tokens: 1024
 
 routing:
-  mode: index
+  mode: llm
+  routes: config/routes.yaml
   retries: 1
 
 simulation:
