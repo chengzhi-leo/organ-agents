@@ -1,0 +1,125 @@
+book: scripts/book_extract/guyton13/book.yaml
+output: data/extraction/guyton13
+
+modules:
+  - id: heart
+    group: cardiovascular
+    description: Cardiac muscle, pacemaker, filling and ejection; sets cardiac output.
+    primary: [9, 10]
+    supporting: [20, 22]
+
+  - id: vasculature
+    group: cardiovascular
+    description: Arteries, arterioles, capillaries and veins; resistance, compliance, and capillary exchange.
+    primary: [14, 15, 16, 17]
+    supporting: [18, 21]
+
+  - id: body_fluids
+    group: cardiovascular
+    description: Extracellular and intracellular fluid compartments; volume, osmolarity, and edema.
+    primary: [25]
+    supporting: [16]
+
+  - id: kidney
+    group: renal
+    description: Nephron filtration, reabsorption and secretion; excretion of water, electrolytes, and acid.
+    primary: [26, 27, 28, 29, 30, 31]
+    supporting: [19, 32]
+
+  - id: raas
+    group: renal
+    description: Renin release, angiotensin II formation, and aldosterone action.
+    primary: [19]
+    supporting: [28, 78]
+
+  - id: adh
+    group: renal
+    description: Vasopressin release and its action on collecting duct water permeability.
+    primary: [29]
+    supporting: [76]
+
+  - id: lung
+    group: respiratory
+    description: Ventilation, gas exchange, blood gas transport, and respiratory drive.
+    primary: [38, 40, 41, 42]
+    supporting: [39, 31]
+
+  - id: endocrine_pancreas
+    group: metabolic
+    description: Islet alpha and beta cells; insulin and glucagon secretion.
+    primary: [79]
+    supporting: [75]
+
+  - id: liver
+    group: metabolic
+    description: Hepatic glucose, lipid and protein turnover; plasma protein and bile secretion.
+    primary: [71, 68]
+    supporting: [69, 70, 79]
+
+  - id: peripheral_tissue
+    group: metabolic
+    description: Skeletal muscle and other insulin-sensitive tissue; substrate uptake and oxidation.
+    primary: [68, 69, 70]
+    supporting: [79, 73]
+
+  - id: adipose_tissue
+    group: metabolic
+    description: Triglyceride storage and lipolysis; leptin and adipokine release.
+    primary: [69]
+    supporting: [72, 79]
+
+  - id: thyroid
+    group: endocrine
+    description: Thyroid hormone synthesis and release; control of metabolic rate.
+    primary: [77]
+    supporting: [75, 73]
+
+  - id: adrenal_cortex
+    group: endocrine
+    description: Cortisol, aldosterone and adrenal androgen synthesis and release.
+    primary: [78]
+    supporting: [75]
+
+  - id: bone_pth
+    group: endocrine
+    description: Parathyroid hormone, calcitonin and vitamin D; bone and calcium-phosphate handling.
+    primary: [80]
+    supporting: [30]
+
+  - id: sympathetic
+    group: autonomic
+    description: Sympathetic and parasympathetic outflow to heart, vessels, and viscera.
+    primary: [61]
+    supporting: [18]
+
+  - id: adrenal_medulla
+    group: autonomic
+    description: Chromaffin cells releasing epinephrine and norepinephrine into blood.
+    primary: [61]
+    supporting: [78]
+
+  - id: gi_tract
+    group: gastrointestinal
+    description: Motility, secretion, digestion and absorption along the alimentary tract.
+    primary: [63, 64, 65, 66]
+    supporting: []
+
+  - id: hypothalamus
+    group: neural
+    description: Feeding, temperature, osmolarity and pituitary control centres.
+    primary: [76, 72, 74]
+    supporting: [59]
+
+  - id: blood
+    group: blood
+    description: Red cells and oxygen carriage; hemostasis and coagulation.
+    primary: [33, 37]
+    supporting: []
+
+  - id: immune
+    group: blood
+    description: Leukocytes, inflammation, and adaptive immunity.
+    primary: [34, 35]
+    supporting: [36]
+
+scenarios: [24, 44, 45, 85]

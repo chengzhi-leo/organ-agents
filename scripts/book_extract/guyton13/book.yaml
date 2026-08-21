@@ -1,0 +1,25 @@
+title: Guyton and Hall Textbook of Medical Physiology, 13th Edition
+pdf: data/book/Guyton-and-Hall-Textbook-of-Medical-Physiology-PDFDrive-.pdf
+output: data/book/guyton13
+
+column_split: 298
+body_top: 40
+body_bottom: 742
+
+drop_fonts: [Frutiger-Light, Frutiger-Roman, Frutiger-Italic, Helvetica, Courier]
+prose_font: WarnockPro
+min_heading_size: 8.5
+heading_gap: 3.0
+
+roles:
+  - {font: Frutiger-Black, size: 11.0, role: h2, stream: main}
+  - {font: Frutiger-Bold, size: 11.0, role: h2, stream: main}
+  - {font: Frutiger-Bold, size: 9.5, role: h3, stream: main}
+  - {font: WarnockPro, size: 10.0, role: text, stream: main}
+  - {font: SymbolNew, size: 10.0, role: text, stream: main}
+  - {font: Frutiger-Bold, size: 10.0, role: h2, stream: aside}
+  - {font: Frutiger-Bold, size: 9.0, role: h3, stream: aside}
+  - {font: Frutiger-Bold, size: 8.0, role: h4, stream: aside}
+  - {font: Frutiger-Light, size: 8.5, role: h3, stream: aside}
+  - {font: WarnockPro, size: 9.0, role: text, stream: aside}
+  - {font: SymbolNew, size: 9.0, role: text, stream: aside}
