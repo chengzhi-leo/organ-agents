@@ -147,7 +147,7 @@ class Anchors:
 def events(trajectories, variables, detection):
     series = defaultdict(list)
     for row in trajectories:
-        series[row["variable"]].append((float(row["time"]), float(row["value_intervention"])))
+        series[row["variable"]].append((float(row["time"]), float(row["value"])))
 
     detected = {}
     for name, specification in variables.items():
@@ -240,7 +240,7 @@ def main():
     anchors = Anchors(graph, variables, fluxes, live)
     structural = anchors.edges()
 
-    with (run / "paired_trajectories.csv").open() as handle:
+    with (run / "trajectories.csv").open() as handle:
         detected = events(list(csv.DictReader(handle)), variables, evaluation["detection"])
 
     perturbation = (arguments.variable, arguments.level)

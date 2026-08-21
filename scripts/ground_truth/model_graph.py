@@ -1,10 +1,8 @@
-import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from xml.etree import ElementTree
 
 NAMESPACE = "{http://www.systems-biology.com}"
-IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
 
 
 @dataclass
@@ -12,18 +10,8 @@ class Quantity:
     id: str
     path: str
     kind: str
-    unit: str
-    value: str | None
     formula: str | None
     rhs: list = field(default_factory=list)
-
-    @property
-    def name(self):
-        return self.path.split("|")[-1]
-
-    @property
-    def container(self):
-        return "|".join(self.path.split("|")[1:-1])
 
 
 @dataclass
@@ -56,20 +44,13 @@ class ModelGraph:
                         self.consumes[quantity.id].add(source)
 
     def _add_quantity(self, tag, element):
-        kind = {"V": "species", "P": "parameter", "Observer": "observer"}[tag]
         identifier = element.get("id")
-        rhs = [
-            child.get("id")
-            for child in element.iter(f"{NAMESPACE}RHSFormula")
-        ]
         self.quantities[identifier] = Quantity(
             identifier,
             element.get("path"),
-            kind,
-            element.get("unit") or "",
-            element.get("value"),
+            {"V": "species", "P": "parameter", "Observer": "observer"}[tag],
             element.get("formulaId"),
-            rhs,
+            [child.get("id") for child in element.iter(f"{NAMESPACE}RHSFormula")],
         )
 
     def _add_formula(self, element):
@@ -86,15 +67,11 @@ class ModelGraph:
             formulas.append(quantity.formula)
         return [formula for formula in formulas if formula in self.formulas]
 
-    @property
-    def states(self):
-        return {
+    def dynamic(self):
+        seeds = {
             identifier for identifier, quantity in self.quantities.items()
             if quantity.kind == "species" and quantity.rhs
         }
-
-    def dynamic(self, seeds=None):
-        seeds = self.states if seeds is None else set(seeds)
         reached, frontier = set(seeds), list(seeds)
         while frontier:
             emerged = []
@@ -111,10 +88,3 @@ class ModelGraph:
         if len(matches) != 1:
             raise ValueError(f"'{path}' matches {len(matches)} quantities")
         return matches[0]
-
-    def search(self, pattern):
-        expression = re.compile(pattern, re.I)
-        return sorted(
-            (q for q in self.quantities.values() if expression.search(q.path)),
-            key=lambda q: q.path,
-        )

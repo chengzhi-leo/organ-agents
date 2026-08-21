@@ -40,7 +40,6 @@ require_fields(
     "runs",
     "outputs",
     "exposed_outputs",
-    "species_activity",
     "verification"
   ),
   "scenario"
@@ -235,43 +234,6 @@ expose_outputs <- function(document, specifications) {
       unit = specification$unit
     )
   })
-}
-
-trace_species <- function(document, run, base_parameters, steady_state_values, ids) {
-  parameter_values <- merge_overrides(
-    base_parameters,
-    overrides(run$parameters, sprintf("run %s parameters", run$id))
-  )
-  simulation <- prepare_simulation(document, parameter_values, steady_state_values)
-  on.exit(invisible(simulation$call("Dispose")), add = TRUE)
-  invisible(simulation$call("RunSimulation"))
-
-  expected <- length(simulation$get("SimulationTimes"))
-  lapply(ids, function(id) {
-    values <- simulation$call("ValuesFor", id)$get("Values")
-    if (length(values) == 1) rep(values, expected) else values
-  })
-}
-
-species_activity <- function(document, runs, base_parameters, steady_state_values) {
-  nodes <- xml2::xml_find_all(document, ".//*[local-name()='V'][@value]")
-  xml2::xml_set_attr(nodes, "persistable", "1")
-  ids <- as.integer(xml2::xml_attr(nodes, "id"))
-
-  arms <- lapply(runs, function(run) {
-    trace_species(document, run, base_parameters, steady_state_values, ids)
-  })
-
-  data.frame(
-    path = xml2::xml_attr(nodes, "path"),
-    baseline = vapply(arms[[1]], function(values) abs(values[[1]]), numeric(1)),
-    max_abs_delta = vapply(
-      seq_along(ids),
-      function(index) max(abs(arms[[2]][[index]] - arms[[1]][[index]])),
-      numeric(1)
-    ),
-    stringsAsFactors = FALSE
-  )
 }
 
 without_root <- function(paths) {
@@ -510,30 +472,22 @@ trajectories <- do.call(rbind, lapply(scenario$runs, function(run) {
   )
 }))
 
-run_ids <- vapply(scenario$runs, function(run) run$id, character(1))
-if (!identical(run_ids, c("control", "intervention"))) {
-  stop("Scenario runs must be ordered as control and intervention")
+if (length(scenario$runs) != 1) {
+  stop("Scenario must declare exactly one run")
 }
 
-control <- trajectories[trajectories$run == "control", ]
-intervention <- trajectories[trajectories$run == "intervention", ]
-paired <- merge(
-  control[c("time", "variable", "value")],
-  intervention[c("time", "variable", "value")],
-  by = c("time", "variable"),
-  suffixes = c("_control", "_intervention")
-)
-paired$delta <- paired$value_intervention - paired$value_control
-
-summary_rows <- lapply(split(paired, paired$variable), function(values) {
-  max_index <- which.max(values$delta)
-  min_index <- which.min(values$delta)
+summary_rows <- lapply(split(trajectories, trajectories$variable), function(values) {
+  values <- values[order(values$time), ]
+  deviation <- values$value - values$value[[1]]
+  max_index <- which.max(deviation)
+  min_index <- which.min(deviation)
   data.frame(
     variable = values$variable[[1]],
-    max_delta = values$delta[[max_index]],
-    max_delta_time = values$time[[max_index]],
-    min_delta = values$delta[[min_index]],
-    min_delta_time = values$time[[min_index]],
+    baseline = values$value[[1]],
+    max_deviation = deviation[[max_index]],
+    max_deviation_time = values$time[[max_index]],
+    min_deviation = deviation[[min_index]],
+    min_deviation_time = values$time[[min_index]],
     stringsAsFactors = FALSE
   )
 })
@@ -546,7 +500,7 @@ for (check in scenario$verification) {
   if (nrow(row) != 1) {
     stop(sprintf("Verification variable is not an output: %s", check$variable))
   }
-  if (!check$metric %in% c("max_delta", "min_delta")) {
+  if (!check$metric %in% c("max_deviation", "min_deviation")) {
     stop(sprintf("Unknown verification metric: %s", check$metric))
   }
   value <- row[[check$metric]][[1]]
@@ -568,24 +522,7 @@ for (check in scenario$verification) {
   }
 }
 
-if (isTRUE(scenario$species_activity)) {
-  cat("Measuring the activity of every species\n")
-  activity <- species_activity(
-    read_model(model_path, scenario$simulation_time),
-    scenario$runs,
-    base_parameters,
-    steady_state_values
-  )
-  write.csv(activity, file.path(output_directory, "species_activity.csv"), row.names = FALSE)
-  cat(sprintf(
-    "%d of %d species respond to the intervention\n",
-    sum(activity$max_abs_delta > 0),
-    nrow(activity)
-  ))
-}
-
 write.csv(trajectories, file.path(output_directory, "trajectories.csv"), row.names = FALSE)
-write.csv(paired, file.path(output_directory, "paired_trajectories.csv"), row.names = FALSE)
 write.csv(summary, file.path(output_directory, "response_summary.csv"), row.names = FALSE)
 
 manifest <- list(

@@ -198,10 +198,6 @@
   ],
   "runs": [
     {
-      "id": "control",
-      "parameters": []
-    },
-    {
       "id": "intervention",
       "parameters": [
         {
@@ -229,28 +225,28 @@
       "id": 89,
       "entity_id": "fT9KXj-pOEOMpswmFcDqXw",
       "path": "GIM_Healthy|Organism|PeripheralVenousBlood|Glucose|Plasma",
-      "unit": "µmol/l"
+      "unit": "\u00b5mol/l"
     },
     {
       "variable": "blood_insulin",
       "id": 101,
       "entity_id": "Wdd1jFvIGkyEfh0czha_uQ",
       "path": "GIM_Healthy|Organism|PeripheralVenousBlood|Insulin|Plasma",
-      "unit": "µmol/l"
+      "unit": "\u00b5mol/l"
     },
     {
       "variable": "blood_glucagon",
       "id": 108,
       "entity_id": "wT9hFIa100WGzxHvdPxp3Q",
       "path": "GIM_Healthy|Organism|PeripheralVenousBlood|Glucagon|Plasma",
-      "unit": "µmol/l"
+      "unit": "\u00b5mol/l"
     },
     {
       "variable": "hepatic_glycogen",
       "id": 11063,
       "entity_id": "mdP0iJQBakus6Ccula0b9A",
       "path": "GIM_Healthy|Organism|Liver|Intracellular|Glycogen",
-      "unit": "µmol"
+      "unit": "\u00b5mol"
     }
   ],
   "exposed_outputs": [
@@ -258,44 +254,43 @@
       "variable": "insulin_secretion",
       "species": "GIM_Healthy|Organism|Pancreas|Interstitial|Insulin",
       "equation": "PancreaticSecretion_PSF*S/S_B*r_BPIR",
-      "unit": "µmol/min"
+      "unit": "\u00b5mol/min"
     },
     {
       "variable": "glucagon_secretion",
       "species": "GIM_Healthy|Organism|Pancreas|Interstitial|Glucagon",
       "equation": "PancreaticSecretion_PSF*r_BPNR*M_IPNR*M_GPNR*M_GLPNR",
-      "unit": "µmol/min"
+      "unit": "\u00b5mol/min"
     },
     {
       "variable": "hepatic_glucose_uptake",
       "species": "GIM_Healthy|Organism|Liver|Intracellular|Glycogen",
       "equation": "Organ_Glucose_Metabolization*M_IHGU*M_GHGU*M_NHGU",
-      "unit": "µmol/min"
+      "unit": "\u00b5mol/min"
     },
     {
       "variable": "hepatic_glucose_production",
       "species": "GIM_Healthy|Organism|Liver|Intracellular|Glucose",
       "equation": "r_BHGP*M_IHGP*M_NHGP*M_GHGP",
-      "unit": "µmol/min"
+      "unit": "\u00b5mol/min"
     },
     {
       "variable": "muscle_glucose_uptake",
       "species": "GIM_Healthy|Organism|Muscle|Intracellular|Glucose",
       "equation": "k_GLUT4* (CP)^(2*S_R_I) * kcat *Volume/Volume_0*( K_water_int *0+ C_int) / (Km + K_water_int *0+ C_int)",
-      "unit": "µmol/min"
+      "unit": "\u00b5mol/min"
     }
   ],
-  "species_activity": true,
   "verification": [
     {
       "variable": "blood_glucose",
-      "metric": "max_delta",
+      "metric": "max_deviation",
       "comparison": "greater_than",
       "threshold": 1000
     },
     {
       "variable": "blood_insulin",
-      "metric": "max_delta",
+      "metric": "max_deviation",
       "comparison": "greater_than",
       "threshold": 1e-05
     }
