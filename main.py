@@ -6,7 +6,7 @@ import yaml
 from src.body import Body
 from src.llm import LLM
 from src.report import build
-from src.router import Router
+from src import router
 from src.runner import Runner
 from src.schemas import Event
 from src.tracker import Tracker
@@ -14,8 +14,8 @@ from src.tracker import Tracker
 ROOT = Path(__file__).parent
 
 
-def load(relative_path):
-    return yaml.safe_load((ROOT / relative_path).read_text())
+def load(path):
+    return yaml.safe_load((ROOT / path).read_text())
 
 
 def main():
@@ -26,12 +26,13 @@ def main():
 
     run_config = load("config/run.yaml")
 
+    body_config = run_config["body"]
+
     llm = LLM(run_config)
-    body = Body(load("config/body.yaml"), llm, ROOT / "knowledge")
-    routing = run_config["routing"]
-    router = Router(llm, body, routing["mode"], routing["retries"], load(routing["routes"]))
-    tracker = Tracker(run_config, ROOT, body, router)
-    runner = Runner(body, router, tracker, llm, run_config["simulation"])
+    body = Body(load(body_config["definition"]), llm, ROOT / body_config["knowledge"])
+    dispatcher = router.build(run_config["routing"], llm, body)
+    tracker = Tracker(run_config, ROOT, body, dispatcher)
+    runner = Runner(body, dispatcher, tracker, llm, run_config["simulation"])
 
     perturbation = Event(args.variable, args.level, "perturbation", (), 0)
     termination = runner.run(perturbation)

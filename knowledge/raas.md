@@ -1,2 +1,0 @@
-- renin increases angiotensin_II.
-- angiotensin_II increases aldosterone.

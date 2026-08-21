@@ -1,0 +1,42 @@
+body:
+  type: router
+  description: >-
+    Whole-body glucose regulation across the represented physiological components.
+  children:
+    - pancreas
+    - liver
+    - skeletal_muscle
+
+pancreas:
+  type: leaf
+  description: >-
+    Endocrine organ whose islet cells release insulin and glucagon into the
+    circulation.
+  knowledge: pancreas.md
+  variables:
+    - insulin_secretion
+    - glucagon_secretion
+    - blood_insulin
+    - blood_glucagon
+
+liver:
+  type: leaf
+  description: >-
+    Organ that both releases glucose into the circulation and takes glucose up
+    from it, storing and mobilising it as glycogen.
+  knowledge: liver.md
+  variables:
+    - hepatic_glucose_production
+    - hepatic_glucose_uptake
+    - hepatic_glycogen
+    - blood_glucose
+
+skeletal_muscle:
+  type: leaf
+  description: >-
+    Contractile tissue that takes glucose up from the circulation for
+    oxidation and for storage as its own glycogen.
+  knowledge: skeletal_muscle.md
+  variables:
+    - muscle_glucose_uptake
+    - blood_glucose

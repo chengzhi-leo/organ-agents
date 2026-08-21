@@ -1,6 +1,0 @@
-- cardiac_output increases mean_arterial_pressure.
-- sympathetic_activity increases vascular_tone.
-- angiotensin_II increases vascular_tone.
-- ADH increases vascular_tone.
-- vascular_tone increases systemic_vascular_resistance.
-- systemic_vascular_resistance increases mean_arterial_pressure.

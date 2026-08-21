@@ -38,9 +38,8 @@ wheels/
 .ipynb_checkpoints
 *.ipynb_checkpoints/
 
-# Data outputs
-data/oracle_outputs/
-data/exploration/*.csv
+# Data & outputs
+data/
 outputs/
 
 # Credentials
@@ -52,9 +51,8 @@ Thumbs.db
 
 # Logs
 *.log
-.env
-service-account.json
+
+# Local-only
 .claude/
 AGENTS.md
 docs/
-eval_data/

@@ -79,7 +79,6 @@ svg { display: block; }
 .node rect { fill: var(--surface-1); stroke-width: 2px; }
 .node.up rect { stroke: var(--up); fill: color-mix(in oklab, var(--up) 9%, var(--surface-1)); }
 .node.down rect { stroke: var(--down); fill: color-mix(in oklab, var(--down) 9%, var(--surface-1)); }
-.node.neutral rect { stroke: var(--edge); fill: var(--surface-1); }
 .n-var { font-size: 12.5px; font-weight: 600; fill: var(--text-primary); text-anchor: middle; }
 .n-agent { font-size: 10.5px; fill: var(--text-muted); text-anchor: middle; }
 .edge { fill: none; stroke: var(--edge); stroke-width: 2px; }
@@ -93,7 +92,6 @@ svg { display: block; }
 .swatch { width: 13px; height: 13px; border-radius: 3px; border: 2px solid; }
 .swatch.up { border-color: var(--up); background: color-mix(in oklab, var(--up) 9%, var(--surface-1)); }
 .swatch.down { border-color: var(--down); background: color-mix(in oklab, var(--down) 9%, var(--surface-1)); }
-.swatch.neutral { border-color: var(--edge); background: var(--surface-1); }
 .swatch.group { width: 22px; border-color: var(--border); background: var(--surface-2); }
 .dash { width: 24px; height: 0; border-top: 2px dashed var(--text-secondary); }
 .solid { width: 24px; height: 0; border-top: 2px solid var(--edge); }
@@ -178,7 +176,6 @@ def _header(name, title, run, config):
     fields = {
         "Perturbation": title,
         "Model": run["model"],
-        "Routing": run["routing_mode"],
         "Temperature": config["generation"]["temperature"],
         "Max rounds": simulation["max_rounds"],
         "Workers": simulation["workers"],
@@ -213,6 +210,9 @@ def _summary(pathway, run):
     coined = (
         f"<p class=\"warn\">Coined outside the registry: {escape(', '.join(run['coined']))}</p>"
         if run["coined"] else ""
+    ) + (
+        f"<p class=\"warn\">Dropped as foreign: {escape(', '.join(run['foreign']))}</p>"
+        if run["foreign"] else ""
     )
     return (
         f"<section><h2>Result</h2><div class=\"card\">"
@@ -265,8 +265,7 @@ def _audit_section(run):
     return (
         f"<section><h2>Routing audit</h2><div class=\"card\"><table>"
         f"<tr><th>Change</th><th>Component</th><th>Status</th></tr>{rows}</table>"
-        f"<p class=\"note\">proposed — routed by the model but absent from the static route table. "
-        f"missed — listed in the static route table but not routed by the model."
+        f"<p class=\"note\">mislabelled — the model restated the change instead of copying it exactly."
         f"</p></div></section>"
     )
 
@@ -299,13 +298,13 @@ def _round_block(entry, records):
 
 
 def _agent_block(record):
-    call = record["call"]
+    trace = record["trace"]
     incoming = ", ".join(
         signed(event["variable"], event["level"]) for event in record["incoming"]
     )
     effects = "".join(
         f"<tr><td>{escape(signed(effect['variable'], effect['level']))}</td>"
-        f"<td>{escape(', '.join(effect['caused_by']))}</td></tr>"
+        f"<td>{escape(', '.join(signed(cause['variable'], cause['level']) for cause in effect['caused_by']))}</td></tr>"
         for effect in record["effects"]
     )
     table = (
@@ -318,10 +317,15 @@ def _agent_block(record):
         f"{escape(', '.join(introduced_causes))}</p>"
         if introduced_causes else ""
     )
+    foreign = (
+        f"<p class=\"warn\">Dropped as foreign: {escape(', '.join(record['foreign']))}</p>"
+        if record["foreign"] else ""
+    )
     return (
         f"<details class=\"inner\"><summary>{escape(record['agent'])}"
-        f"<span class=\"tag\">← {escape(incoming)} · {call['total_tokens']:,} tokens</span></summary>"
-        f"<div class=\"body\">{table}{introduced}{_calls_block('LLM call', [call])}</div></details>"
+        f"<span class=\"tag\">← {escape(incoming)} · {trace['total_tokens']:,} tokens</span></summary>"
+        f"<div class=\"body\">{table}{introduced}{foreign}"
+        f"{_calls_block('LLM call', [trace])}</div></details>"
     )
 
 
@@ -456,7 +460,7 @@ def _box(box):
 def _chip(node, position):
     variable, level = node
     label = variable if len(variable) <= 19 else variable[:18] + "…"
-    style = {None: "neutral", "decreased": "down", "increased": "up"}[level]
+    style = {"decreased": "down", "increased": "up"}[level]
     x, y = position["x"], position["y"] + CHIP_Y
     return (
         f"<g class=\"node {style}\"><title>{escape(signed(variable, level))}</title>"
@@ -506,7 +510,6 @@ def _legend():
         "<div class=\"legend\">"
         "<span><i class=\"swatch down\"></i>decreased ↓</span>"
         "<span><i class=\"swatch up\"></i>increased ↑</span>"
-        "<span><i class=\"swatch neutral\"></i>direction not observed</span>"
         "<span><i class=\"swatch group\"></i>one organ · left causes right</span>"
         "<span><i class=\"solid\"></i>forward</span>"
         "<span><i class=\"dash\"></i>feedback (loop closure, not expanded)</span>"

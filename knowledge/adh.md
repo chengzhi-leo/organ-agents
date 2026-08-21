@@ -1,3 +1,0 @@
-- plasma_osmolality increases ADH.
-- mean_arterial_pressure reduces ADH.
-- angiotensin_II increases ADH.

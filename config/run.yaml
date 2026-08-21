@@ -1,5 +1,4 @@
 model:
-  provider: google
   name: gemini-3.5-flash-lite
   cache_system_prompts: false
   cache_ttl: "3600s"
@@ -8,14 +7,17 @@ generation:
   temperature: 0.0
   max_tokens: 1024
 
+body:
+  definition: config/domains/glucose.yaml
+  knowledge: knowledge/glucose
+
 routing:
-  mode: llm
-  routes: config/routes.yaml
+  mode: broadcast
   retries: 1
 
 simulation:
   max_rounds: 6
-  max_llm_calls: 20
+  max_llm_calls: 40
   workers: 4
 
 debug:

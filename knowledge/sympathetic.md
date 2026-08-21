@@ -1,1 +1,0 @@
-- mean_arterial_pressure reduces sympathetic_activity.

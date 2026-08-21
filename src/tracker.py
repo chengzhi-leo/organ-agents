@@ -33,19 +33,24 @@ class Tracker:
         if self.debug["verbose"]:
             self._print_dispatch(entry)
 
-    def record(self, index, leaf, incoming, completion):
-        arriving = {event.variable for event in incoming}
-        effects = [effect.model_dump() for effect in completion.value.effects]
-        cited = {cause for effect in effects for cause in effect["caused_by"]}
-        resolvable = arriving | {effect["variable"] for effect in effects}
+    def record(self, index, leaf, incoming, local, foreign, trace):
+        arriving = {(event.variable, event.level) for event in incoming}
+        effects = [effect.model_dump() for effect in local]
+        cited = {
+            (cause["variable"], cause["level"])
+            for effect in effects
+            for cause in effect["caused_by"]
+        }
+        resolvable = arriving | {(effect["variable"], effect["level"]) for effect in effects}
         entry = {
             "round": index,
             "agent": leaf.id,
             "incoming": [event.dump() for event in incoming],
             "effects": effects,
-            "introduced_causes": sorted(cited - resolvable),
+            "introduced_causes": sorted(signed(*cause) for cause in cited - resolvable),
             "coined": sorted({effect["variable"] for effect in effects} - self.registry),
-            "call": completion.dump(),
+            "foreign": sorted(signed(effect.variable, effect.level) for effect in foreign),
+            "trace": trace.dump(),
         }
         self.records.append(entry)
         if self.debug["verbose"]:
@@ -62,8 +67,12 @@ class Tracker:
         return sorted({name for entry in self.records for name in entry["coined"]})
 
     @property
+    def foreign(self):
+        return sorted({name for entry in self.records for name in entry["foreign"]})
+
+    @property
     def usage(self):
-        reasoning = [entry["call"] for entry in self.records]
+        reasoning = [entry["trace"] for entry in self.records]
         routing = [call for entry in self.rounds for call in entry["routing"]]
         calls = reasoning + routing
         return {
@@ -97,6 +106,9 @@ class Tracker:
         if self.coined:
             print(f"\nCoined variables: {', '.join(self.coined)}")
 
+        if self.foreign:
+            print(f"\nDropped as foreign: {', '.join(self.foreign)}")
+
         if self.router.audit:
             print("\nRouting audit:\n")
             for entry in self.router.audit:
@@ -125,13 +137,13 @@ class Tracker:
             "perturbation": self.perturbation,
             "model": run_config["model"]["name"],
             "termination": termination,
-            "routing_mode": self.router.mode,
             "routing_audit": self.router.audit,
             "routing_failures": self.router.failures,
             "rounds": len(self.rounds),
             "reactions": len(self.records),
             "usage": self.usage,
             "coined": self.coined,
+            "foreign": self.foreign,
         })
         (self.run_dir / "run_config.yaml").write_text(yaml.safe_dump(run_config, sort_keys=False))
         print(f"\nSaved to {self.run_dir}")
@@ -152,8 +164,11 @@ class Tracker:
     def _print_record(self, entry):
         print(f"\n[{entry['agent']}] emits")
         for effect in entry["effects"]:
-            print(f"    {signed(effect['variable'], effect['level'])}   ← {', '.join(effect['caused_by'])}")
+            causes = ", ".join(signed(cause["variable"], cause["level"]) for cause in effect["caused_by"])
+            print(f"    {signed(effect['variable'], effect['level'])}   ← {causes}")
         if entry["introduced_causes"]:
             print(f"    introduced causes: {', '.join(entry['introduced_causes'])}")
         if entry["coined"]:
             print(f"    coined: {', '.join(entry['coined'])}")
+        if entry["foreign"]:
+            print(f"    dropped as foreign: {', '.join(entry['foreign'])}")

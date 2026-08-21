@@ -14,10 +14,6 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 class LLM:
     def __init__(self, config):
-        provider = config["model"]["provider"]
-        if provider != "google":
-            raise ValueError(f"Unsupported provider '{provider}'; only 'google' is implemented")
-
         self.client = genai.Client(
             vertexai=True,
             project=os.environ["GOOGLE_CLOUD_PROJECT"],

@@ -4,16 +4,20 @@ from typing import Literal
 from pydantic import BaseModel
 
 Level = Literal["decreased", "increased"]
-Relation = Literal["increases", "reduces"]
+
+
+class Cause(BaseModel):
+    variable: str
+    level: Level
 
 
 class Effect(BaseModel):
     variable: str
     level: Level
-    caused_by: list[str]
+    caused_by: list[Cause]
 
 
-class Reaction(BaseModel):
+class Effects(BaseModel):
     effects: list[Effect]
 
 
@@ -26,13 +30,6 @@ class Assignment(BaseModel):
 
 class Dispatch(BaseModel):
     assignments: list[Assignment]
-
-
-@dataclass(frozen=True)
-class Link:
-    source: str
-    relation: Relation
-    target: str
 
 
 @dataclass
@@ -59,11 +56,17 @@ class Completion:
 
 
 @dataclass
+class Reaction:
+    effects: list[Effect]
+    trace: Completion
+
+
+@dataclass
 class Event:
     variable: str
     level: Level
     source_agent: str
-    caused_by: tuple[str, ...]
+    caused_by: tuple[Cause, ...]
     round: int
 
     @property
@@ -75,6 +78,6 @@ class Event:
             "variable": self.variable,
             "level": self.level,
             "source_agent": self.source_agent,
-            "caused_by": list(self.caused_by),
+            "caused_by": [cause.model_dump() for cause in self.caused_by],
             "round": self.round,
         }

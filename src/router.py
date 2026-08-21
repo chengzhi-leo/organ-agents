@@ -1,8 +1,6 @@
 from src.body import RouterNode
 from src.schemas import Dispatch
 
-MODES = ("llm", "index", "hybrid")
-
 SYSTEM_PROMPT = """
 You are the router in a multi-agent physiological simulation.
 
@@ -37,16 +35,22 @@ Components:
 """
 
 
-class Router:
-    def __init__(self, llm, body, mode, retries, routes):
-        if mode not in MODES:
-            raise ValueError(f"unknown routing mode '{mode}'; expected one of {MODES}")
+class Broadcast:
+    def __init__(self, body):
+        self.leaves = body.leaves
+        self.audit = []
+        self.failures = []
+
+    def route(self, events):
+        return {event.key: self.leaves for event in events}
+
+
+class LLMRouter:
+    def __init__(self, llm, body, retries):
         self.llm = llm
         self.body = body
-        self.mode = mode
         self.retries = retries
         self.leaves = {leaf.id: leaf for leaf in body.leaves}
-        self.routes = self._resolve_routes(routes)
         self.cache = {}
         self.audit = []
         self.failures = []
@@ -55,37 +59,8 @@ class Router:
     def route(self, events):
         pending = sorted({event.key for event in events} - self.cache.keys())
         if pending:
-            self._resolve(pending)
+            self.cache.update(self._ask(pending))
         return {event.key: self.cache[event.key] for event in events}
-
-    def _resolve_routes(self, routes):
-        registry = set(self.body.registry)
-        resolved = {}
-        for variable, agent_ids in routes.items():
-            if variable not in registry:
-                raise ValueError(f"static route for '{variable}', which no component declares")
-            unknown = sorted(set(agent_ids) - self.leaves.keys())
-            if unknown:
-                raise ValueError(f"static route for '{variable}' names unknown agents {unknown}")
-            resolved[variable] = [self.leaves[id] for id in agent_ids]
-        return resolved
-
-    def _resolve(self, pending):
-        if self.mode == "index":
-            self.cache.update({key: self.routes.get(key[0], []) for key in pending})
-            return
-
-        routed = self._ask(pending)
-        if self.mode == "llm":
-            self.cache.update(routed)
-            return
-
-        for key, leaves in routed.items():
-            static = self.routes.get(key[0], [])
-            proposed = [leaf for leaf in leaves if leaf not in static]
-            missed = [leaf for leaf in static if leaf not in leaves]
-            self.audit += self._entries(key, proposed, "proposed") + self._entries(key, missed, "missed")
-            self.cache[key] = static + proposed
 
     def _ask(self, pending):
         for attempt in range(self.retries + 1):
@@ -132,13 +107,6 @@ class Router:
             raise ValueError(f"router returned '{change}', which is not a change number")
         return int(change.strip())
 
-    @staticmethod
-    def _entries(key, leaves, status):
-        return [
-            {"variable": key[0], "level": key[1], "agent": leaf.id, "status": status}
-            for leaf in leaves
-        ]
-
     def _render(self, node, depth):
         indent = "  " * depth
         if isinstance(node, RouterNode):
@@ -151,3 +119,13 @@ class Router:
             f"{indent}  internal variables: {', '.join(node.variables)}",
             "",
         ]
+
+
+def build(config, llm, body):
+    if config["mode"] == "broadcast":
+        return Broadcast(body)
+    if config["mode"] == "llm":
+        return LLMRouter(llm, body, config["retries"])
+    raise ValueError(
+        f"routing declares unknown mode '{config['mode']}'; expected 'broadcast' or 'llm'"
+    )

@@ -1,10 +1,16 @@
-from src.schemas import Reaction
+from src.schemas import Effects, Reaction
 
 SYSTEM_PROMPT = """You are one local physiological component in a distributed human physiology model.
 
-Report every change that follows inside your own component from the changes arriving this round. Each
-consequence names one of your internal variables, the direction it moves, and its immediate cause. An
-arriving variable may originate in another component.
+Every change in the body is delivered to you, not only the ones that concern you. Take the arriving
+changes one at a time and first ask whether your own knowledge gives that change a mechanism inside
+you: a receptor that binds it, a transporter that carries it, a process it drives. A change with no
+such mechanism is not yours — pass over it and report nothing for it. Returning an empty effects list
+is a correct answer, and will often be the right one.
+
+For each arriving change that does reach you, report every change that follows inside your own
+component. Each consequence names one of your internal variables, the direction it moves, and its
+immediate cause. An arriving variable may originate in another component.
 
 Follow the chain all the way through your component. If an arriving change causes X, and your
 knowledge says X in turn causes Y, report both, and name X as the cause of Y. Keep going until you
@@ -19,9 +25,11 @@ Give each consequence its immediate cause: either one of the arriving changes, o
 in this same response. Name the nearest cause — never the original arriving change when something you
 are also reporting sits between them.
 
-Your knowledge states each link once, and signed. "A increases B" means they move together — if A
-falls, B falls. "A reduces B" means they move oppositely. Apply each link in whichever direction the
-arriving changes call for.
+State each cause with the direction that cause itself moved, not the direction of the consequence it
+produces. A cause that falls and drives its consequence up is still reported as decreased.
+
+Work each direction out from the mechanism your knowledge describes: which way the variable moves
+follows from how the mechanism responds, not from the direction the arriving change happened to take.
 
 When several arriving changes act on the same variable, report it once and list every one of them as
 a cause.
@@ -30,10 +38,11 @@ Reuse a name from the known vocabulary whenever you mean that concept; coin a ne
 for a concept it does not cover.
 
 Return in JSON format:
-{"effects": [{"variable": str, "level": "decreased" | "increased", "caused_by": [str]}]}"""
+{"effects": [{"variable": str, "level": "decreased" | "increased",
+              "caused_by": [{"variable": str, "level": "decreased" | "increased"}]}]}"""
 
 
-class LeafAgent:
+class Agent:
     def __init__(self, id, description, knowledge, variables, llm):
         self.id = id
         self.description = description
@@ -42,8 +51,8 @@ class LeafAgent:
         self.llm = llm
 
     def react(self, events, registry):
-        prompt = self._prompt(events, registry)
-        return self.llm.generate(SYSTEM_PROMPT, prompt, Reaction)
+        completion = self.llm.generate(SYSTEM_PROMPT, self._prompt(events, registry), Effects)
+        return Reaction(completion.value.effects, completion)
 
     def _prompt(self, events, registry):
         arriving = "\n".join(f"- {event.variable} = {event.level}" for event in events)

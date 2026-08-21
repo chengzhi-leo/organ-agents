@@ -1,22 +1,6 @@
-import re
 from dataclasses import dataclass, field
 
-from src.agent import LeafAgent
-from src.schemas import Link
-
-LINK = re.compile(r"^- (\w+) (increases|reduces) (\w+)\.$")
-
-
-def parse_links(text):
-    links = []
-    for line in text.splitlines():
-        if not line.startswith("- "):
-            continue
-        match = LINK.match(line)
-        if not match:
-            raise ValueError(f"malformed knowledge link: {line}")
-        links.append(Link(*match.groups()))
-    return links
+from src.agent import Agent
 
 
 @dataclass
@@ -30,12 +14,10 @@ class Body:
     def __init__(self, config, llm, knowledge_dir):
         self.nodes = {}
         self.root = self._build("body", config, llm, knowledge_dir)
-        self.links = {leaf.id: parse_links(leaf.knowledge) for leaf in self.leaves}
-        self._check_links()
 
     @property
     def leaves(self):
-        return [node for node in self.nodes.values() if isinstance(node, LeafAgent)]
+        return [node for node in self.nodes.values() if isinstance(node, Agent)]
 
     @property
     def registry(self):
@@ -52,7 +34,7 @@ class Body:
         if spec["type"] == "router":
             node = RouterNode(node_id, spec["description"])
         elif spec["type"] == "leaf":
-            node = LeafAgent(
+            node = Agent(
                 node_id,
                 spec["description"],
                 (knowledge_dir / spec["knowledge"]).read_text(),
@@ -69,16 +51,3 @@ class Body:
                 for child_id in spec["children"]
             ]
         return node
-
-    def _check_links(self):
-        registry = set(self.registry)
-        for leaf in self.leaves:
-            for link in self.links[leaf.id]:
-                if link.target not in leaf.variables:
-                    raise ValueError(
-                        f"'{leaf.id}' states an effect on '{link.target}', which it does not declare"
-                    )
-                if link.source not in registry:
-                    raise ValueError(
-                        f"'{leaf.id}' cites '{link.source}', which no component declares"
-                    )

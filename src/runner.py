@@ -53,14 +53,23 @@ class Runner:
         registry = self.body.registry
 
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
-            completions = list(pool.map(lambda batch: batch[0].react(batch[1], registry), batches))
+            reactions = list(pool.map(lambda batch: batch[0].react(batch[1], registry), batches))
 
         events = []
-        for (leaf, incoming), completion in zip(batches, completions):
-            self.tracker.record(index, leaf, incoming, completion)
-            for effect in completion.value.effects:
+        for (leaf, incoming), reaction in zip(batches, reactions):
+            local, foreign = self._localize(leaf, reaction.effects, set(registry))
+            self.tracker.record(index, leaf, incoming, local, foreign, reaction.trace)
+            for effect in local:
                 visited.add((leaf.id, effect.variable, effect.level))
                 events.append(
                     Event(effect.variable, effect.level, leaf.id, tuple(effect.caused_by), index + 1)
                 )
         return events
+
+    @staticmethod
+    def _localize(leaf, effects, registry):
+        local, foreign = [], []
+        for effect in effects:
+            owned = effect.variable in leaf.variables or effect.variable not in registry
+            (local if owned else foreign).append(effect)
+        return local, foreign
