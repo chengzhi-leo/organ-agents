@@ -1,5 +1,14 @@
 book: scripts/book_extract/guyton13/book.yaml
-output: data/extraction/guyton13
+output: data/knowledge_extraction/guyton13
+
+model:
+  name: gemini-3.5-flash-lite
+  cache_system_prompts: false
+  cache_ttl: "3600s"
+
+generation:
+  temperature: 0.0
+  max_output_tokens: 16384
 
 modules:
   - id: heart

@@ -5,7 +5,7 @@ model:
 
 generation:
   temperature: 0.0
-  max_output_tokens: 1024
+  max_output_tokens: 4096
 
 agent:
   vocabulary_mode: constrained
@@ -21,13 +21,13 @@ routing:
   retries: 1
 
 simulation:
-  max_rounds: 10
-  max_llm_calls: 40
+  max_rounds: 6
+  max_llm_calls: 24
   workers: 4
 
 debug:
-  verbose: true
+  verbose: false
   save_trace: true
 
 output:
-  directory: outputs/logs/
+  directory: outputs/experiments/glucose_vocab

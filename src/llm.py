@@ -11,6 +11,8 @@ from src.schemas import Completion
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
+MAX_CONTEXT_TOKENS = 200_000
+
 
 class LLM:
     def __init__(self, config):
@@ -23,12 +25,18 @@ class LLM:
         self.cache_system_prompts = config["model"]["cache_system_prompts"]
         self.cache_ttl = config["model"]["cache_ttl"] if self.cache_system_prompts else None
         self.temperature = config["generation"]["temperature"]
-        self.max_tokens = config["generation"]["max_tokens"]
+        self.max_output_tokens = config["generation"]["max_output_tokens"]
+        if not 0 < self.max_output_tokens <= MAX_CONTEXT_TOKENS:
+            raise ValueError(
+                f"max_output_tokens must be between 1 and {MAX_CONTEXT_TOKENS:,}"
+            )
         self.log = []
         self.caches = {}
         self.lock = threading.Lock()
 
     def generate(self, system_prompt, user_prompt, response_model):
+        generation = self._generation_settings(response_model)
+        self._validate_token_budget(system_prompt, user_prompt, generation)
         anchor = (
             {"cached_content": self._cache(system_prompt)}
             if self.cache_system_prompts
@@ -39,10 +47,7 @@ class LLM:
             contents=user_prompt,
             config=types.GenerateContentConfig(
                 **anchor,
-                temperature=self.temperature,
-                max_output_tokens=self.max_tokens,
-                response_mime_type="application/json",
-                response_schema=response_model,
+                **generation,
             ),
         )
         if not response.text:
@@ -62,6 +67,33 @@ class LLM:
         with self.lock:
             self.log.append(completion)
         return completion
+
+    def _generation_settings(self, response_model):
+        return {
+            "temperature": self.temperature,
+            "max_output_tokens": self.max_output_tokens,
+            "response_mime_type": "application/json",
+            "response_schema": response_model,
+        }
+
+    def _validate_token_budget(self, system_prompt, user_prompt, generation):
+        usage = self.client.models.count_tokens(
+            model=self.model,
+            contents=user_prompt,
+            config=types.CountTokensConfig(
+                system_instruction=system_prompt,
+                generation_config=types.GenerationConfig(**generation),
+            ),
+        )
+        if usage.total_tokens is None:
+            raise RuntimeError(f"{self.model} did not return an input token count")
+        request_tokens = usage.total_tokens + self.max_output_tokens
+        if request_tokens > MAX_CONTEXT_TOKENS:
+            raise ValueError(
+                f"{self.model} request budget {request_tokens:,} exceeds the "
+                f"{MAX_CONTEXT_TOKENS:,}-token context limit "
+                f"({usage.total_tokens:,} input + {self.max_output_tokens:,} max output)"
+            )
 
     def _cache(self, system_prompt):
         with self.lock:

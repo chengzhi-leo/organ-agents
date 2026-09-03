@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from src.pathway import ARROWS, signed, variable_edges
+from src.pathway import ARROWS, display_edges, longest_chain, signed
 
 CHIP_W, CHIP_H, CHIP_GAP, HEAD_H, BOX_PAD = 150, 32, 8, 15, 9
 BOX_H = BOX_PAD * 2 + HEAD_H + CHIP_H
@@ -155,8 +155,12 @@ def _read(path):
 
 
 def _page(name, trace, pathway, run, config):
-    perturbation = run["perturbation"]
-    title = f"{perturbation['variable']} {ARROWS[perturbation['level']]}"
+    events = {event["id"]: event for event in pathway["events"]}
+    inputs = [events[event_id] for event_id in pathway["input_event_ids"]]
+    title = ", ".join(
+        f"{event['agent_id']}.{event['variable']} {ARROWS[event['level']]}"
+        for event in inputs
+    )
     return (
         f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         f"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
@@ -164,8 +168,6 @@ def _page(name, trace, pathway, run, config):
         f"{_header(name, title, run, config)}"
         f"{_summary(pathway, run)}"
         f"{_graph_section(pathway)}"
-        f"{_agent_section(pathway)}"
-        f"{_audit_section(run)}"
         f"{_rounds_section(trace)}"
         f"</main></body></html>"
     )
@@ -207,27 +209,22 @@ def _summary(pathway, run):
         f"<div class=\"value\">{value:,}</div></div>"
         for label, value in tiles.items()
     )
-    coined = (
-        f"<p class=\"warn\">Coined outside the registry: {escape(', '.join(run['coined']))}</p>"
-        if run["coined"] else ""
-    ) + (
-        f"<p class=\"warn\">Dropped as foreign: {escape(', '.join(run['foreign']))}</p>"
-        if run["foreign"] else ""
-    )
     return (
         f"<section><h2>Result</h2><div class=\"card\">"
-        f"<div class=\"hero\">{len(pathway['variable_edges'])}</div>"
+        f"<div class=\"hero\">{len(pathway['edges'])}</div>"
         f"<div class=\"hero-label\">causal edges discovered across "
         f"{run['rounds']} rounds and {run['reactions']} agent reactions</div>"
-        f"{coined}</div>"
+        f"</div>"
         f"<div class=\"tiles\" style=\"margin-top:14px\">{cells}</div></section>"
     )
 
 
 def _graph_section(pathway):
-    chain = pathway["longest_chain"]
+    chain = longest_chain(pathway)
+    events = {event["id"]: event for event in pathway["events"]}
     steps = "<i>→</i>".join(
-        f"<b>{escape(signed(variable, level))}</b>" for variable, level in chain
+        f"<b>{escape(events[event_id]['agent_id'] + '.' + signed(events[event_id]['variable'], events[event_id]['level']))}</b>"
+        for event_id in chain
     )
     longest = (
         f"<h3 style=\"margin-top:22px\">Longest chain</h3>"
@@ -235,38 +232,7 @@ def _graph_section(pathway):
     )
     return (
         f"<section><h2>Discovered pathway</h2>"
-        f"<div class=\"card\">{_graph(pathway['variable_edges'])}{_legend()}{longest}</div></section>"
-    )
-
-
-def _agent_section(pathway):
-    rows = "".join(
-        f"<tr><td>{escape(edge['from'])}</td><td>{escape(edge['to'])}</td>"
-        f"<td>{escape(', '.join(edge['via']))}</td>"
-        f"<td class=\"num\">{escape(', '.join(str(r) for r in edge['rounds']))}</td></tr>"
-        for edge in pathway["agent_edges"]
-    )
-    return (
-        f"<section><h2>Organ-level flow</h2><div class=\"card\"><table>"
-        f"<tr><th>From</th><th>To</th><th>Carried by</th><th>Rounds</th></tr>"
-        f"{rows}</table></div></section>"
-    )
-
-
-def _audit_section(run):
-    audit = run["routing_audit"]
-    if not audit:
-        return ""
-    rows = "".join(
-        f"<tr><td>{escape(signed(entry['variable'], entry['level']))}</td>"
-        f"<td>{escape(entry['agent'])}</td><td>{escape(entry['status'])}</td></tr>"
-        for entry in audit
-    )
-    return (
-        f"<section><h2>Routing audit</h2><div class=\"card\"><table>"
-        f"<tr><th>Change</th><th>Component</th><th>Status</th></tr>{rows}</table>"
-        f"<p class=\"note\">mislabelled — the model restated the change instead of copying it exactly."
-        f"</p></div></section>"
+        f"<div class=\"card\">{_graph(display_edges(pathway))}{_legend()}{longest}</div></section>"
     )
 
 
@@ -282,18 +248,21 @@ def _rounds_section(trace):
 def _round_block(entry, records):
     index = entry["round"]
     agents = ", ".join(entry["dispatch"]) or "nothing dispatched"
-    edges = variable_edges(records)
-
     dropped = "".join(
         f"<p class=\"warn\">Unrouted: {escape(signed(event['variable'], event['level']))}</p>"
         for event in entry["dropped"]
+    )
+    closures = "".join(
+        f"<p class=\"note\">Homeostatic closure: "
+        f"{escape(signed(event['variable'], event['level']))}</p>"
+        for event in entry.get("homeostatic_closures", [])
     )
     routing = _calls_block("Routing calls", entry["routing"]) if entry["routing"] else ""
     agent_blocks = "".join(_agent_block(record) for record in records)
 
     return (
         f"<details><summary>Round {index}<span class=\"tag\">{escape(agents)}</span></summary>"
-        f"<div class=\"body\">{_graph(edges)}{dropped}{routing}{agent_blocks}</div></details>"
+        f"<div class=\"body\">{dropped}{closures}{routing}{agent_blocks}</div></details>"
     )
 
 
@@ -302,30 +271,22 @@ def _agent_block(record):
     incoming = ", ".join(
         signed(event["variable"], event["level"]) for event in record["incoming"]
     )
-    effects = "".join(
-        f"<tr><td>{escape(signed(effect['variable'], effect['level']))}</td>"
-        f"<td>{escape(', '.join(signed(cause['variable'], cause['level']) for cause in effect['caused_by']))}</td></tr>"
-        for effect in record["effects"]
+    events = "".join(
+        f"<tr><td>{escape(event['id'])}</td>"
+        f"<td>{escape(event['agent_id'] + '.' + signed(event['variable'], event['level']))}</td>"
+        f"<td>{escape(event['caused_by'])}</td></tr>"
+        for event in record["events"]
     )
     table = (
-        f"<table><tr><th>Effect</th><th>Caused by</th></tr>{effects}</table>"
-        if effects else "<p class=\"empty\">No effects emitted.</p>"
+        f"<table><tr><th>ID</th><th>Event</th><th>Caused by</th></tr>{events}</table>"
+        if events else "<p class=\"empty\">No events emitted.</p>"
     )
-    introduced_causes = record["introduced_causes"]
-    introduced = (
-        f"<p class=\"note\">Introduced cause nodes: "
-        f"{escape(', '.join(introduced_causes))}</p>"
-        if introduced_causes else ""
-    )
-    foreign = (
-        f"<p class=\"warn\">Dropped as foreign: {escape(', '.join(record['foreign']))}</p>"
-        if record["foreign"] else ""
-    )
+    cost = f"{trace['total_tokens']:,} tokens" if trace else "deterministic"
+    calls = _calls_block("LLM call", [trace]) if trace else ""
     return (
         f"<details class=\"inner\"><summary>{escape(record['agent'])}"
-        f"<span class=\"tag\">← {escape(incoming)} · {trace['total_tokens']:,} tokens</span></summary>"
-        f"<div class=\"body\">{table}{introduced}{foreign}"
-        f"{_calls_block('LLM call', [trace])}</div></details>"
+        f"<span class=\"tag\">← {escape(incoming)} · {cost}</span></summary>"
+        f"<div class=\"body\">{table}{calls}</div></details>"
     )
 
 
@@ -383,15 +344,13 @@ def _ordered(nodes, pairs):
 def _layout(edges):
     layers, agents = {}, {}
     for edge in edges:
-        source, target = (edge["from"], edge["from_level"]), (edge["to"], edge["to_level"])
+        source, target = edge["source"], edge["target"]
         layers[source] = min(layers.get(source, edge["round"]), edge["round"])
         layers[target] = min(layers.get(target, edge["round"] + 1), edge["round"] + 1)
-        agents.setdefault(target, edge["agent"])
-        agents.setdefault(source, edge["from_agent"])
+        agents.setdefault(target, target[1])
+        agents.setdefault(source, source[1])
 
-    pairs = {
-        ((edge["from"], edge["from_level"]), (edge["to"], edge["to_level"])) for edge in edges
-    }
+    pairs = {(edge["source"], edge["target"]) for edge in edges}
     rows = {}
     for node in sorted(layers, key=lambda node: (layers[node], agents[node])):
         rows.setdefault(layers[node], {}).setdefault(agents[node], []).append(node)
@@ -422,10 +381,8 @@ def _graph(edges):
     placed, boxes, width, depth = _layout(edges)
     paths, backward = [], 0
     for edge in edges:
-        source = placed[(edge["from"], edge["from_level"])]
-        target = placed[(edge["to"], edge["to_level"])]
-        if source["box"] == target["box"]:
-            continue
+        source = placed[edge["source"]]
+        target = placed[edge["target"]]
         if target["y"] > source["y"]:
             path, style = _forward(source, target), "edge"
         elif target["y"] == source["y"]:
@@ -458,12 +415,12 @@ def _box(box):
 
 
 def _chip(node, position):
-    variable, level = node
+    event_id, agent, variable, level = node
     label = variable if len(variable) <= 19 else variable[:18] + "…"
     style = {"decreased": "down", "increased": "up"}[level]
     x, y = position["x"], position["y"] + CHIP_Y
     return (
-        f"<g class=\"node {style}\"><title>{escape(signed(variable, level))}</title>"
+        f"<g class=\"node {style}\"><title>{escape(event_id + ': ' + agent + '.' + signed(variable, level))}</title>"
         f"<rect x=\"{x:.0f}\" y=\"{y:.0f}\" width=\"{CHIP_W}\" height=\"{CHIP_H}\" rx=\"8\"/>"
         f"<text class=\"n-var\" x=\"{x + CHIP_W / 2:.0f}\" y=\"{y + CHIP_H / 2 + 4:.0f}\">"
         f"{escape(signed(label, level))}</text></g>"
@@ -510,7 +467,7 @@ def _legend():
         "<div class=\"legend\">"
         "<span><i class=\"swatch down\"></i>decreased ↓</span>"
         "<span><i class=\"swatch up\"></i>increased ↑</span>"
-        "<span><i class=\"swatch group\"></i>one organ · left causes right</span>"
+        "<span><i class=\"swatch group\"></i>one agent</span>"
         "<span><i class=\"solid\"></i>forward</span>"
         "<span><i class=\"dash\"></i>feedback (loop closure, not expanded)</span>"
         "</div>"

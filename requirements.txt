@@ -3,3 +3,4 @@ pydantic
 pyyaml
 python-dotenv
 pymupdf
+tiktoken

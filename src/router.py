@@ -12,7 +12,7 @@ physiological function or variables. A change may be routed to multiple agents.
 Do not predict the agent's response or generate new physiological changes.
 The receiving agent will decide whether and how its own state changes.
 
-Return every input change exactly once. Copy its variable and level exactly.
+Return every input change exactly once.
 If no agent is relevant, return an empty agent_ids list.
 
 Return JSON only:
@@ -21,8 +21,6 @@ Return JSON only:
   "assignments": [
     {
       "change": "index of the change",
-      "variable": "string",
-      "level": "decreased" | "increased",
       "agent_ids": ["component_name"]
     }
   ]
@@ -38,7 +36,6 @@ Components:
 class Broadcast:
     def __init__(self, body):
         self.leaves = body.leaves
-        self.audit = []
         self.failures = []
 
     def route(self, events):
@@ -48,11 +45,9 @@ class Broadcast:
 class LLMRouter:
     def __init__(self, llm, body, retries):
         self.llm = llm
-        self.body = body
         self.retries = retries
         self.leaves = {leaf.id: leaf for leaf in body.leaves}
         self.cache = {}
-        self.audit = []
         self.failures = []
         self.system_prompt = SYSTEM_PROMPT + "\n".join(self._render(body.root, 0))
 
@@ -73,8 +68,8 @@ class LLMRouter:
 
     def _request(self, pending):
         changes = "\n".join(
-            f"{number}. {variable} = {level}"
-            for number, (variable, level) in enumerate(pending, 1)
+            f"{number}. {agent_id}.{variable} = {level}"
+            for number, (agent_id, variable, level) in enumerate(pending, 1)
         )
         prompt = f"Physiological changes to route:\n{changes}"
         completion = self.llm.generate(self.system_prompt, prompt, Dispatch)
@@ -87,15 +82,6 @@ class LLMRouter:
         if unknown:
             raise ValueError(f"router returned unknown agent ids {unknown}")
 
-        for number, item in answers:
-            key = pending[number - 1]
-            if (item.variable, item.level) != key:
-                self.audit.append({
-                    "variable": key[0],
-                    "level": key[1],
-                    "agent": f"restated as {item.variable} = {item.level}",
-                    "status": "mislabelled",
-                })
         return {
             pending[number - 1]: [self.leaves[id] for id in item.agent_ids]
             for number, item in answers

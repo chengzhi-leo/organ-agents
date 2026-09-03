@@ -1,3 +1,7 @@
+from collections import deque
+
+from src.schemas import PathwayGraph
+
 ARROWS = {"decreased": "↓", "increased": "↑"}
 
 
@@ -5,82 +9,122 @@ def signed(variable, level):
     return f"{variable} {ARROWS[level]}"
 
 
-def emitters(records, perturbation=None):
-    sources = {}
-    if perturbation:
-        sources[(perturbation["variable"], perturbation["level"])] = perturbation["source_agent"]
-    for entry in records:
-        for event in entry["incoming"]:
-            sources.setdefault((event["variable"], event["level"]), event["source_agent"])
-        for effect in entry["effects"]:
-            sources.setdefault((effect["variable"], effect["level"]), entry["agent"])
-    return sources
+def node_key(event):
+    return event["agent_id"], event["variable"], event["level"]
 
 
-def variable_edges(records, perturbation=None):
-    sources = emitters(records, perturbation)
-    edges = {}
-    for entry in records:
-        for effect in entry["effects"]:
-            for cause in effect["caused_by"]:
-                key = (cause["variable"], cause["level"])
-                edge = {
-                    "from": cause["variable"],
-                    "from_level": cause["level"],
-                    "from_agent": sources.get(key, "introduced"),
-                    "to": effect["variable"],
-                    "to_level": effect["level"],
-                    "agent": entry["agent"],
-                    "round": entry["round"],
-                }
-                identity = tuple(
-                    edge[field] for field in ("from", "from_level", "to", "to_level", "agent")
-                )
-                edges.setdefault(identity, edge)
-    return list(edges.values())
+def nodes(pathway):
+    return {node_key(event) for event in pathway["events"]}
 
 
-def agent_edges(edges):
-    projected = {}
-    for edge in edges:
-        entry = projected.setdefault(
-            (edge["from_agent"], edge["agent"]),
-            {"from": edge["from_agent"], "to": edge["agent"], "via": [], "rounds": []},
-        )
-        carried = signed(edge["from"], edge["from_level"])
-        if carried not in entry["via"]:
-            entry["via"].append(carried)
-        if edge["round"] not in entry["rounds"]:
-            entry["rounds"].append(edge["round"])
-    return list(projected.values())
+def edges(pathway):
+    events_by_id = {event["id"]: event for event in pathway["events"]}
+    return {
+        (node_key(events_by_id[edge["source"]]), node_key(events_by_id[edge["target"]]))
+        for edge in pathway["edges"]
+    }
 
 
-def longest_chain(edges):
-    adjacency = {}
-    for edge in edges:
-        adjacency.setdefault((edge["from"], edge["from_level"]), []).append(
-            (edge["to"], edge["to_level"])
-        )
+def build(scenario_id, events, vocabulary, validate_vocabulary):
+    canonical_events, canonical_edges = _canonicalize(events)
+    graph = PathwayGraph(
+        scenario_id=scenario_id,
+        input_event_ids=[event.id for event in events if event.type == "input"],
+        events=canonical_events,
+        edges=canonical_edges,
+    )
+    if validate_vocabulary:
+        vocabulary.validate_graph(graph)
+    return graph.model_dump(exclude_none=True)
 
+
+def _canonicalize(events):
+    canonical_events = []
+    canonical_ids = {}
+    response_ids = {}
+
+    for event in events:
+        if event.type == "input":
+            canonical_events.append(event.graph_dump())
+            canonical_ids[event.id] = event.id
+            continue
+        if event.key not in response_ids:
+            response_ids[event.key] = event.id
+            canonical_events.append(event.graph_dump())
+        canonical_ids[event.id] = response_ids[event.key]
+
+    canonical_edges = []
+    edge_keys = set()
+    for event in events:
+        if event.caused_by is None:
+            continue
+        if event.caused_by not in canonical_ids:
+            raise ValueError(
+                f"event '{event.id}' cites unknown cause '{event.caused_by}'"
+            )
+        edge = canonical_ids[event.caused_by], canonical_ids[event.id]
+        if edge[0] == edge[1] or edge in edge_keys:
+            continue
+        edge_keys.add(edge)
+        canonical_edges.append({"source": edge[0], "target": edge[1]})
+
+    return canonical_events, canonical_edges
+
+
+def event_adjacency(pathway):
+    outgoing = {}
+    for edge in pathway["edges"]:
+        outgoing.setdefault(edge["source"], []).append(edge["target"])
+    return outgoing
+
+
+def longest_chain(pathway):
+    outgoing = event_adjacency(pathway)
     best = []
 
     def walk(path):
         nonlocal best
         if len(path) > len(best):
             best = list(path)
-        for node in adjacency.get(path[-1], []):
+        for node in outgoing.get(path[-1], []):
             if node not in path:
                 walk(path + [node])
 
-    for start in adjacency:
+    for start in outgoing:
         walk([start])
     return best
 
 
-def build(records, perturbation):
-    edges = variable_edges(records, perturbation)
-    return {
-        "variable_edges": edges,
-        "agent_edges": agent_edges(edges),
-        "longest_chain": longest_chain(edges),
-    }
+def depths(pathway):
+    outgoing = event_adjacency(pathway)
+    found = {event_id: 0 for event_id in pathway["input_event_ids"]}
+    queue = deque(pathway["input_event_ids"])
+    while queue:
+        source = queue.popleft()
+        for target in outgoing.get(source, []):
+            if target not in found:
+                found[target] = found[source] + 1
+                queue.append(target)
+    return found
+
+
+def display_node_key(event):
+    return event["id"], event["agent_id"], event["variable"], event["level"]
+
+
+def display_edges(pathway):
+    events_by_id = {event["id"]: event for event in pathway["events"]}
+    layered = depths(pathway)
+    unreached = max(layered.values(), default=-1) + 1
+    rendered = []
+    for edge in pathway["edges"]:
+        source = events_by_id[edge["source"]]
+        target = events_by_id[edge["target"]]
+        source_key = display_node_key(source)
+        target_key = display_node_key(target)
+        rendered.append({
+            "source": source_key,
+            "target": target_key,
+            "round": layered.get(source["id"], unreached),
+        })
+    return rendered

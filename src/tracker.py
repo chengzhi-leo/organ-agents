@@ -3,55 +3,58 @@ from datetime import datetime
 
 import yaml
 
-from src.pathway import build, signed
+from src.pathway import build, longest_chain, signed
 
 
 class Tracker:
-    def __init__(self, config, root, body, router):
+    def __init__(
+        self,
+        config,
+        root,
+        router,
+        scenario_id,
+        vocabulary,
+        validate_vocabulary,
+    ):
         self.debug = config["debug"]
         self.run_dir = root / config["output"]["directory"] / datetime.now().strftime("%Y%m%d/%H%M%S")
-        self.body = body
         self.router = router
-        self.registry = set(body.registry)
-        self.perturbation = None
+        self.scenario_id = scenario_id
+        self.vocabulary = vocabulary
+        self.validate_vocabulary = validate_vocabulary
+        self.events = []
         self.rounds = []
         self.records = []
         self._pathway = None
 
     def begin(self, perturbation):
-        self.perturbation = perturbation.dump()
+        self.events.append(perturbation)
 
-    def begin_round(self, index, bundles, dropped, routing):
+    def begin_round(self, index, bundles, dropped, closures, routing):
         batches = sorted(bundles.items(), key=lambda batch: batch[0].id)
         entry = {
             "round": index,
-            "dispatch": {leaf.id: [event.dump() for event in events] for leaf, events in batches},
-            "dropped": [event.dump() for event in dropped],
+            "dispatch": {
+                leaf.id: [event.trace_dump() for event in events]
+                for leaf, events in batches
+            },
+            "dropped": [event.trace_dump() for event in dropped],
+            "homeostatic_closures": [event.trace_dump() for event in closures],
             "routing": [completion.dump() for completion in routing],
         }
         self.rounds.append(entry)
         if self.debug["verbose"]:
             self._print_dispatch(entry)
 
-    def record(self, index, leaf, incoming, local, foreign, trace):
-        arriving = {(event.variable, event.level) for event in incoming}
-        effects = [effect.model_dump() for effect in local]
-        cited = {
-            (cause["variable"], cause["level"])
-            for effect in effects
-            for cause in effect["caused_by"]
-        }
-        resolvable = arriving | {(effect["variable"], effect["level"]) for effect in effects}
+    def record(self, index, leaf, incoming, emitted, trace):
         entry = {
             "round": index,
             "agent": leaf.id,
-            "incoming": [event.dump() for event in incoming],
-            "effects": effects,
-            "introduced_causes": sorted(signed(*cause) for cause in cited - resolvable),
-            "coined": sorted({effect["variable"] for effect in effects} - self.registry),
-            "foreign": sorted(signed(effect.variable, effect.level) for effect in foreign),
-            "trace": trace.dump(),
+            "incoming": [event.trace_dump() for event in incoming],
+            "events": [event.trace_dump() for event in emitted],
+            "trace": trace.dump() if trace else None,
         }
+        self.events.extend(emitted)
         self.records.append(entry)
         if self.debug["verbose"]:
             self._print_record(entry)
@@ -59,20 +62,17 @@ class Tracker:
     @property
     def pathway(self):
         if self._pathway is None:
-            self._pathway = build(self.records, self.perturbation)
+            self._pathway = build(
+                self.scenario_id,
+                self.events,
+                self.vocabulary,
+                self.validate_vocabulary,
+            )
         return self._pathway
 
     @property
-    def coined(self):
-        return sorted({name for entry in self.records for name in entry["coined"]})
-
-    @property
-    def foreign(self):
-        return sorted({name for entry in self.records for name in entry["foreign"]})
-
-    @property
     def usage(self):
-        reasoning = [entry["trace"] for entry in self.records]
+        reasoning = [entry["trace"] for entry in self.records if entry["trace"]]
         routing = [call for entry in self.rounds for call in entry["routing"]]
         calls = reasoning + routing
         return {
@@ -86,36 +86,18 @@ class Tracker:
         }
 
     def print_summary(self, termination):
-        print("\n=== VARIABLE PATHWAY ===\n")
-        for edge in self.pathway["variable_edges"]:
-            print(
-                f"{signed(edge['from'], edge['from_level'])}"
-                f" → {signed(edge['to'], edge['to_level'])}"
-                f"   ({edge['agent']}, round {edge['round']})"
-            )
+        events_by_id = {event["id"]: event for event in self.pathway["events"]}
+        print("\n=== EVENT PATHWAY ===\n")
+        for edge in self.pathway["edges"]:
+            source = events_by_id[edge["source"]]
+            target = events_by_id[edge["target"]]
+            print(f"{self._render(source)} → {self._render(target)}")
 
-        print("\n=== AGENT PATHWAY ===\n")
-        for edge in self.pathway["agent_edges"]:
-            print(f"{edge['from']} → {edge['to']}   via {', '.join(edge['via'])}")
-
-        chain = self.pathway["longest_chain"]
+        chain = longest_chain(self.pathway)
         if chain:
             print("\nLongest chain:\n")
-            print("\n→ ".join(signed(variable, level) for variable, level in chain))
+            print("\n→ ".join(self._render(events_by_id[event_id]) for event_id in chain))
 
-        if self.coined:
-            print(f"\nCoined variables: {', '.join(self.coined)}")
-
-        if self.foreign:
-            print(f"\nDropped as foreign: {', '.join(self.foreign)}")
-
-        if self.router.audit:
-            print("\nRouting audit:\n")
-            for entry in self.router.audit:
-                print(
-                    f"    {entry['status']:11s} {signed(entry['variable'], entry['level'])}"
-                    f" → {entry['agent']}"
-                )
         for failure in self.router.failures:
             print(f"\nRouting retry after: {failure}")
 
@@ -134,16 +116,13 @@ class Tracker:
         self._write("trace.json", {"rounds": self.rounds, "records": self.records})
         self._write("pathway.json", self.pathway)
         self._write("run.json", {
-            "perturbation": self.perturbation,
+            "scenario_id": self.scenario_id,
             "model": run_config["model"]["name"],
             "termination": termination,
-            "routing_audit": self.router.audit,
             "routing_failures": self.router.failures,
             "rounds": len(self.rounds),
             "reactions": len(self.records),
             "usage": self.usage,
-            "coined": self.coined,
-            "foreign": self.foreign,
         })
         (self.run_dir / "run_config.yaml").write_text(yaml.safe_dump(run_config, sort_keys=False))
         print(f"\nSaved to {self.run_dir}")
@@ -157,18 +136,17 @@ class Tracker:
         for agent, events in entry["dispatch"].items():
             print(f"\n{agent} ←")
             for event in events:
-                print(f"    {signed(event['variable'], event['level'])}   (from {event['source_agent']})")
+                print(f"    {event['id']}  {self._render(event)}")
         for event in entry["dropped"]:
-            print(f"\ndropped (unrouted): {signed(event['variable'], event['level'])}")
+            print(f"\ndropped (unrouted): {self._render(event)}")
+        for event in entry["homeostatic_closures"]:
+            print(f"\nhomeostatic closure: {self._render(event)}")
 
     def _print_record(self, entry):
         print(f"\n[{entry['agent']}] emits")
-        for effect in entry["effects"]:
-            causes = ", ".join(signed(cause["variable"], cause["level"]) for cause in effect["caused_by"])
-            print(f"    {signed(effect['variable'], effect['level'])}   ← {causes}")
-        if entry["introduced_causes"]:
-            print(f"    introduced causes: {', '.join(entry['introduced_causes'])}")
-        if entry["coined"]:
-            print(f"    coined: {', '.join(entry['coined'])}")
-        if entry["foreign"]:
-            print(f"    dropped as foreign: {', '.join(entry['foreign'])}")
+        for event in entry["events"]:
+            print(f"    {event['id']}  {self._render(event)} ← {event['caused_by']}")
+
+    @staticmethod
+    def _render(event):
+        return f"{event['agent_id']}.{signed(event['variable'], event['level'])}"
