@@ -19,14 +19,10 @@ class Change(StrictModel):
     caused_by: str
 
 
-class Changes(StrictModel):
-    changes: list[Change]
-
-
-def constrained_changes_model(agent_id, variables):
-    if not variables:
+def changes_model(agent_id, outputs):
+    if not outputs:
         raise ValueError(f"agent '{agent_id}' has no output variables")
-    variable = Literal.__getitem__(tuple(variables))
+    variable = Literal.__getitem__(tuple(outputs))
     change = create_model(
         f"{agent_id}_change",
         __base__=StrictModel,
@@ -41,23 +37,19 @@ def constrained_changes_model(agent_id, variables):
     )
 
 
-class Assignment(StrictModel):
-    change: str
-    agent_ids: list[str]
-
-
-class Dispatch(StrictModel):
-    assignments: list[Assignment]
-
-
 class GraphEvent(StrictModel):
     id: str
     agent_id: str
     variable: str
     level: Level
     type: EventType
-    round: int | None = None
-    generated_by: str | None = None
+
+
+class ScenarioInput(StrictModel):
+    scenario_id: str
+    agent_id: str
+    variable: str
+    level: Level
 
 
 class GraphEdge(StrictModel):
@@ -116,40 +108,104 @@ class PathwayGraph(StrictModel):
         return self
 
 
-class AgentVocabulary(StrictModel):
-    kind: Literal[
-        "translator_environment",
-        "llm_agent",
-        "source_placeholder",
-        "input_only",
-    ]
-    variables: list[str]
+class AgentInterface(StrictModel):
+    inputs: list[str]
+    outputs: list[str]
 
 
-class Vocabulary(StrictModel):
-    levels: list[Level]
-    agents: dict[str, AgentVocabulary]
+class BloodTransform(StrictModel):
+    source: str
+    target: str
+    direction: Literal["same", "opposite"]
+
+
+class BloodInterface(StrictModel):
+    outputs: list[str]
+    transforms: list[BloodTransform]
+
+    @property
+    def inputs(self):
+        return [transform.source for transform in self.transforms]
+
+
+class SystemSchema(StrictModel):
+    agents: dict[str, AgentInterface]
+    blood: BloodInterface
 
     @model_validator(mode="after")
     def validate_definitions(self):
-        if set(self.levels) != set(FLIP):
-            raise ValueError("vocabulary levels must be exactly decreased and increased")
-        for agent_id, agent in self.agents.items():
-            if len(agent.variables) != len(set(agent.variables)):
-                raise ValueError(f"agent '{agent_id}' declares duplicate variables")
+        if not self.agents:
+            raise ValueError("schema must define at least one agent")
+        if "blood" in self.agents:
+            raise ValueError("blood must be defined as the shared compartment")
+        for agent_id, interface in self.agents.items():
+            for field in ("inputs", "outputs"):
+                variables = getattr(interface, field)
+                if len(variables) != len(set(variables)):
+                    raise ValueError(f"agent '{agent_id}' declares duplicate {field}")
+            if not interface.outputs:
+                raise ValueError(f"agent '{agent_id}' must declare at least one output")
+
+        if not self.blood.outputs:
+            raise ValueError("blood must declare at least one output")
+        if len(self.blood.outputs) != len(set(self.blood.outputs)):
+            raise ValueError("blood declares duplicate outputs")
+        if not self.blood.transforms:
+            raise ValueError("blood must declare at least one transform")
+        sources = self.blood.inputs
+        if len(sources) != len(set(sources)):
+            raise ValueError("blood declares duplicate transform sources")
+        producers = {
+            variable
+            for interface in self.agents.values()
+            for variable in interface.outputs
+        }
+        for transform in self.blood.transforms:
+            if transform.source not in producers:
+                raise ValueError(
+                    f"blood transform source '{transform.source}' has no agent producer"
+                )
+            if transform.target not in self.blood.outputs:
+                raise ValueError(
+                    f"blood transform target '{transform.target}' is not a blood output"
+                )
         return self
+
+    def interface(self, component_id):
+        if component_id == "blood":
+            return self.blood
+        if component_id not in self.agents:
+            raise ValueError(f"unknown component '{component_id}'")
+        return self.agents[component_id]
 
     def validate_graph(self, graph):
         for event in graph.events:
-            self.validate_owner(event.agent_id, event.variable, f"event '{event.id}'")
+            self.validate_output(event.agent_id, event.variable, f"event '{event.id}'")
+        events = {event.id: event for event in graph.events}
+        for edge in graph.edges:
+            source = events[edge.source]
+            target = events[edge.target]
+            self.validate_input(
+                target.agent_id,
+                source.variable,
+                f"edge '{edge.source} -> {edge.target}'",
+            )
         return graph
 
-    def validate_owner(self, agent_id, variable, location):
-        if agent_id not in self.agents:
-            raise ValueError(f"{location} references unknown agent '{agent_id}'")
-        if variable not in self.agents[agent_id].variables:
+    def validate_input(self, agent_id, variable, location):
+        self._validate(agent_id, variable, "inputs", location)
+
+    def validate_output(self, agent_id, variable, location):
+        self._validate(agent_id, variable, "outputs", location)
+
+    def _validate(self, agent_id, variable, field, location):
+        try:
+            interface = self.interface(agent_id)
+        except ValueError:
+            raise ValueError(f"{location} references unknown agent '{agent_id}'") from None
+        if variable not in getattr(interface, field):
             raise ValueError(
-                f"{location} variable '{variable}' does not belong to agent '{agent_id}'"
+                f"{location} variable '{variable}' is not in agent '{agent_id}' {field}"
             )
 
 
@@ -184,13 +240,14 @@ class Reaction:
 
 class Event(GraphEvent):
     caused_by: str | None
+    round: int
 
     @property
     def key(self):
         return self.agent_id, self.variable, self.level
 
     def graph_dump(self):
-        return self.model_dump(exclude={"caused_by"}, exclude_none=True)
+        return self.model_dump(exclude={"caused_by", "round"})
 
     def trace_dump(self):
         return self.model_dump(exclude_none=False)

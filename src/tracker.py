@@ -11,36 +11,30 @@ class Tracker:
         self,
         config,
         root,
-        router,
         scenario_id,
-        vocabulary,
-        validate_vocabulary,
+        schema,
     ):
         self.debug = config["debug"]
         self.run_dir = root / config["output"]["directory"] / datetime.now().strftime("%Y%m%d/%H%M%S")
-        self.router = router
         self.scenario_id = scenario_id
-        self.vocabulary = vocabulary
-        self.validate_vocabulary = validate_vocabulary
-        self.events = []
+        self.schema = schema
+        self.events = {}
         self.rounds = []
         self.records = []
-        self._pathway = None
 
     def begin(self, perturbation):
-        self.events.append(perturbation)
+        self.events[perturbation.id] = perturbation
 
-    def begin_round(self, index, bundles, dropped, closures, routing):
+    def begin_round(self, index, bundles, dropped, closures):
         batches = sorted(bundles.items(), key=lambda batch: batch[0].id)
         entry = {
             "round": index,
             "dispatch": {
-                leaf.id: [event.trace_dump() for event in events]
+                leaf.id: [event.id for event in events]
                 for leaf, events in batches
             },
-            "dropped": [event.trace_dump() for event in dropped],
-            "homeostatic_closures": [event.trace_dump() for event in closures],
-            "routing": [completion.dump() for completion in routing],
+            "dropped": [event.id for event in dropped],
+            "homeostatic_closures": [event.id for event in closures],
         }
         self.rounds.append(entry)
         if self.debug["verbose"]:
@@ -50,34 +44,28 @@ class Tracker:
         entry = {
             "round": index,
             "agent": leaf.id,
-            "incoming": [event.trace_dump() for event in incoming],
-            "events": [event.trace_dump() for event in emitted],
+            "incoming": [event.id for event in incoming],
+            "events": [event.id for event in emitted],
             "trace": trace.dump() if trace else None,
         }
-        self.events.extend(emitted)
+        self.events.update((event.id, event) for event in emitted)
         self.records.append(entry)
         if self.debug["verbose"]:
             self._print_record(entry)
 
     @property
     def pathway(self):
-        if self._pathway is None:
-            self._pathway = build(
-                self.scenario_id,
-                self.events,
-                self.vocabulary,
-                self.validate_vocabulary,
-            )
-        return self._pathway
+        return build(
+            self.scenario_id,
+            list(self.events.values()),
+            self.schema,
+        )
 
     @property
     def usage(self):
-        reasoning = [entry["trace"] for entry in self.records if entry["trace"]]
-        routing = [call for entry in self.rounds for call in entry["routing"]]
-        calls = reasoning + routing
+        calls = [entry["trace"] for entry in self.records if entry["trace"]]
         return {
-            "reasoning_calls": len(reasoning),
-            "routing_calls": len(routing),
+            "llm_calls": len(calls),
             "prompt_tokens": sum(call["prompt_tokens"] for call in calls),
             "cached_tokens": sum(call["cached_tokens"] for call in calls),
             "output_tokens": sum(call["output_tokens"] for call in calls),
@@ -98,28 +86,27 @@ class Tracker:
             print("\nLongest chain:\n")
             print("\n→ ".join(self._render(events_by_id[event_id]) for event_id in chain))
 
-        for failure in self.router.failures:
-            print(f"\nRouting retry after: {failure}")
-
         usage = self.usage
         print(f"\nTermination: {termination}")
         print(f"Rounds: {len(self.rounds)}   Reactions: {len(self.records)}")
-        print(f"LLM calls: reasoning={usage['reasoning_calls']}  routing={usage['routing_calls']}")
+        print(f"LLM calls: {usage['llm_calls']}")
         print(f"Tokens: {usage['total_tokens']}   cached: {usage['cached_tokens']}"
               f"   max/call: {usage['max_tokens_per_call']}")
 
     def save(self, run_config, termination):
-        if not self.debug["save_trace"]:
-            return self.run_dir
         self.run_dir.mkdir(parents=True, exist_ok=True)
 
-        self._write("trace.json", {"rounds": self.rounds, "records": self.records})
+        if self.debug["save_trace"]:
+            self._write("trace.json", {
+                "events": [event.trace_dump() for event in self.events.values()],
+                "rounds": self.rounds,
+                "records": self.records,
+            })
         self._write("pathway.json", self.pathway)
         self._write("run.json", {
             "scenario_id": self.scenario_id,
             "model": run_config["model"]["name"],
             "termination": termination,
-            "routing_failures": self.router.failures,
             "rounds": len(self.rounds),
             "reactions": len(self.records),
             "usage": self.usage,
@@ -133,18 +120,22 @@ class Tracker:
 
     def _print_dispatch(self, entry):
         print(f"\n{'=' * 70}\nROUND {entry['round']}\n{'=' * 70}")
-        for agent, events in entry["dispatch"].items():
+        for agent, event_ids in entry["dispatch"].items():
             print(f"\n{agent} ←")
-            for event in events:
+            for event_id in event_ids:
+                event = self.events[event_id].trace_dump()
                 print(f"    {event['id']}  {self._render(event)}")
-        for event in entry["dropped"]:
+        for event_id in entry["dropped"]:
+            event = self.events[event_id].trace_dump()
             print(f"\ndropped (unrouted): {self._render(event)}")
-        for event in entry["homeostatic_closures"]:
+        for event_id in entry["homeostatic_closures"]:
+            event = self.events[event_id].trace_dump()
             print(f"\nhomeostatic closure: {self._render(event)}")
 
     def _print_record(self, entry):
         print(f"\n[{entry['agent']}] emits")
-        for event in entry["events"]:
+        for event_id in entry["events"]:
+            event = self.events[event_id].trace_dump()
             print(f"    {event['id']}  {self._render(event)} ← {event['caused_by']}")
 
     @staticmethod

@@ -1,11 +1,10 @@
 body:
   type: router
-  description: >-
-    Whole-body glucose regulation across the represented physiological components.
   children:
     - pancreas
     - liver
     - skeletal_muscle
+    - kidney
     - blood
 
 pancreas:
@@ -23,31 +22,7 @@ skeletal_muscle:
     Contractile tissue that takes up and uses glucose and mobilizes local glycogen.
   knowledge: skeletal_muscle.md
 
-blood:
+kidney:
   description: >-
-    Deterministic environment that translates local secretion and glucose flux events.
-  transfers:
-    - source: {agent_id: pancreas, variable: insulin_secretion}
-      target: {agent_id: blood, variable: circulating_insulin}
-      direction: same
-    - source: {agent_id: pancreas, variable: glucagon_secretion}
-      target: {agent_id: blood, variable: circulating_glucagon}
-      direction: same
-    - source: {agent_id: liver, variable: glucose_release}
-      target: {agent_id: blood, variable: blood_glucose}
-      direction: same
-    - source: {agent_id: liver, variable: glucose_uptake}
-      target: {agent_id: blood, variable: blood_glucose}
-      direction: opposite
-    - source: {agent_id: liver, variable: glycogen_synthesis}
-      target: {agent_id: blood, variable: blood_glucose}
-      direction: opposite
-    - source: {agent_id: liver, variable: gluconeogenesis}
-      target: {agent_id: blood, variable: blood_glucose}
-      direction: same
-    - source: {agent_id: skeletal_muscle, variable: glucose_uptake}
-      target: {agent_id: blood, variable: blood_glucose}
-      direction: opposite
-    - source: {agent_id: skeletal_muscle, variable: glucose_utilization}
-      target: {agent_id: blood, variable: blood_glucose}
-      direction: opposite
+    Organ that filters glucose and regulates urinary glucose and water excretion.
+  knowledge: kidney.md

@@ -13,10 +13,6 @@ def node_key(event):
     return event["agent_id"], event["variable"], event["level"]
 
 
-def nodes(pathway):
-    return {node_key(event) for event in pathway["events"]}
-
-
 def edges(pathway):
     events_by_id = {event["id"]: event for event in pathway["events"]}
     return {
@@ -25,7 +21,7 @@ def edges(pathway):
     }
 
 
-def build(scenario_id, events, vocabulary, validate_vocabulary):
+def build(scenario_id, events, schema):
     canonical_events, canonical_edges = _canonicalize(events)
     graph = PathwayGraph(
         scenario_id=scenario_id,
@@ -33,8 +29,7 @@ def build(scenario_id, events, vocabulary, validate_vocabulary):
         events=canonical_events,
         edges=canonical_edges,
     )
-    if validate_vocabulary:
-        vocabulary.validate_graph(graph)
+    schema.validate_graph(graph)
     return graph.model_dump(exclude_none=True)
 
 

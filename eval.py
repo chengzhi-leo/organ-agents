@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 from src.pathway import edges, node_key, signed
-from src.schemas import PathwayGraph, Vocabulary
+from src.schemas import PathwayGraph, SystemSchema
 
 
 def rates(predicted, expected):
@@ -198,10 +198,9 @@ def report(result):
               f"   predicted {predicted}; expected {expected}")
 
 
-def load_graph(path, vocabulary, validate_vocabulary):
+def load_graph(path, schema):
     graph = PathwayGraph.model_validate_json(path.read_text())
-    if validate_vocabulary:
-        vocabulary.validate_graph(graph)
+    schema.validate_graph(graph)
     return graph.model_dump(exclude_none=True)
 
 
@@ -209,23 +208,14 @@ def main():
     parser = argparse.ArgumentParser(description="Score a canonical pathway graph against ground truth")
     parser.add_argument("--pathway", type=Path, required=True)
     parser.add_argument("--truth", type=Path, required=True)
-    parser.add_argument("--vocabulary", type=Path, required=True)
-    parser.add_argument(
-        "--prediction-vocabulary",
-        required=True,
-        choices=["constrained", "open"],
-    )
+    parser.add_argument("--schema", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    vocabulary = Vocabulary.model_validate(yaml.safe_load(args.vocabulary.read_text()))
+    schema = SystemSchema.model_validate(yaml.safe_load(args.schema.read_text()))
     result = evaluate(
-        load_graph(
-            args.pathway,
-            vocabulary,
-            args.prediction_vocabulary == "constrained",
-        ),
-        load_graph(args.truth, vocabulary, True),
+        load_graph(args.pathway, schema),
+        load_graph(args.truth, schema),
     )
     report(result)
 

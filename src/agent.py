@@ -1,58 +1,45 @@
-from src.schemas import Change, Changes, FLIP, Reaction, constrained_changes_model
+from src.schemas import Change, FLIP, Reaction, changes_model
 
-BASE_SYSTEM_PROMPT = """You are one local physiological component in a distributed human physiology model.
+BASE_SYSTEM_PROMPT = """
+You represent one physiological organ or component.
 
-An input is a new external or system-level perturbation. A response is a directional effect produced
-by a physiological mechanism, not a new abnormal baseline state. All changes you report become
-responses; the orchestrator assigns their event type.
+Given the incoming events, report the direct physiological changes that occur locally within this component.
 
-For each incoming event, report only direct directional changes inside your own component. A change
-with no local mechanism is ignored. Never emit a variable owned by another component.
-
-Each change must cite exactly one incoming event ID as its immediate cause. Do not cite a variable,
-an event that was not supplied, or another change in the same response. The orchestrator will assign
-IDs to your changes and propagate them in later rounds.
-
-{vocabulary_instruction}
+Rules:
+- Perform only one causal step from the incoming events.
+- Report only changes within this component.
+- The provided local physiological knowledge is reliable but may be incomplete. Supplement it with your established physiological knowledge when necessary.
+- Use only variables listed under Allowed output variables.
+- Each change must be directly caused by exactly one incoming event and must cite its event ID.
+- If no incoming event directly causes an allowed output, return an empty changes list.
 
 Return JSON only:
-{"changes": [{"variable": str, "level": "decreased" | "increased", "caused_by": str}]}
-"""
 
-VOCABULARY_INSTRUCTIONS = {
-    "constrained": "Use exactly one of the allowed output variable names. Never invent new names.",
-    "open": "Name each local change precisely using a concise snake_case variable name. You are not restricted to a predefined vocabulary.",
-}
+{"changes": [
+  {
+    "variable": str,
+    "level": "decreased" | "increased",
+    "caused_by": str
+  }
+]}
+"""
 
 
 class Agent:
     uses_llm = True
 
-    def __init__(self, id, description, knowledge, variables, llm, vocabulary_mode):
-        if vocabulary_mode not in VOCABULARY_INSTRUCTIONS:
-            raise ValueError(
-                f"unknown agent vocabulary mode '{vocabulary_mode}'; "
-                f"expected one of {sorted(VOCABULARY_INSTRUCTIONS)}"
-            )
+    def __init__(self, id, description, knowledge, inputs, outputs, llm):
         self.id = id
         self.description = description
         self.knowledge = knowledge
-        self.variables = variables
+        self.inputs = inputs
+        self.outputs = outputs
         self.llm = llm
-        self.vocabulary_mode = vocabulary_mode
-        self.response_model = (
-            constrained_changes_model(id, variables)
-            if vocabulary_mode == "constrained"
-            else Changes
-        )
-        self.system_prompt = BASE_SYSTEM_PROMPT.replace(
-            "{vocabulary_instruction}",
-            VOCABULARY_INSTRUCTIONS[vocabulary_mode],
-        )
+        self.response_model = changes_model(id, outputs)
 
     def react(self, events):
         completion = self.llm.generate(
-            self.system_prompt,
+            BASE_SYSTEM_PROMPT,
             self._prompt(events),
             self.response_model,
         )
@@ -60,44 +47,37 @@ class Agent:
 
     def _prompt(self, events):
         arriving = "\n".join(
-            f"- {event.id} [{event.type}]: "
-            f"{event.agent_id}.{event.variable} = {event.level}"
+            f"{event.id}: {event.variable} = {event.level}"
             for event in events
         )
         prompt = (
             f"Your component: {self.id}\n"
             f"{self.description}\n\n"
             f"Your local physiological knowledge:\n{self.knowledge}\n\n"
+            f"Accepted input variables:\n{', '.join(self.inputs)}\n\n"
+            f"Allowed output variables:\n{', '.join(self.outputs)}\n\n"
         )
-        if self.vocabulary_mode == "constrained":
-            prompt += f"Allowed output variables:\n{', '.join(self.variables)}\n\n"
         return f"{prompt}Incoming events:\n{arriving}"
 
 
 class Blood:
     uses_llm = False
 
-    def __init__(self, id, description, variables, transfers):
+    def __init__(self, id, outputs, transforms):
         self.id = id
-        self.description = description
-        self.variables = variables
-        self.transfers = {
-            (transfer["source"]["agent_id"], transfer["source"]["variable"]): transfer
-            for transfer in transfers
-        }
+        self.outputs = outputs
+        self.transforms = {transform.source: transform for transform in transforms}
 
     def react(self, events):
         changes = []
         for event in events:
-            transfer = self.transfers.get((event.agent_id, event.variable))
-            if transfer is None:
+            transform = self.transforms.get(event.variable)
+            if transform is None:
                 continue
-            direction = transfer["direction"]
-            if direction not in ("same", "opposite"):
-                raise ValueError(f"blood transfer declares unknown direction '{direction}'")
+            direction = transform.direction
             level = event.level if direction == "same" else FLIP[event.level]
             changes.append(Change(
-                variable=transfer["target"]["variable"],
+                variable=transform.target,
                 level=level,
                 caused_by=event.id,
             ))

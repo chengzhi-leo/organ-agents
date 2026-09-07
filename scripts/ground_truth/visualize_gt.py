@@ -1,36 +1,61 @@
 import argparse
 import json
+import sys
 from collections import defaultdict
 from html import escape
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from src.graph_view import STYLE as GRAPH_STYLE
+from src.graph_view import render_svg
+
 TEMPLATE = Path(__file__).with_name("graph_page.html")
 
-NODE_H, ROW_GAP, LANE_PAD = 34, 10, 13
-COL_GAP, GUTTER, RIGHT_PAD, TOP = 62, 146, 24, 30
-CHAR, GLYPH, PAD_X = 6.95, 20, 13
-GLYPHS = {"increased": "&#9650;", "decreased": "&#9660;"}
+
+def title(scenario_id):
+    return " ".join(scenario_id.split("_")[1:]).capitalize()
 
 
-def title(path):
-    return " ".join(path.stem.split("_")[1:]).capitalize()
-
-
-def load(directory):
+def load(paths):
     scenarios = []
-    for path in sorted(directory.glob("*.json")):
+    for path in paths:
         graph = json.loads(path.read_text())
         events = {event["id"] for event in graph["events"]}
         unknown = {end for edge in graph["edges"] for end in edge.values()} - events
         if unknown:
             raise ValueError(f"{path.name} has edges to unknown events: {sorted(unknown)}")
-        scenarios.append(graph | {"title": title(path)})
+        scenarios.append(graph | {"title": title(graph["scenario_id"])})
     if not scenarios:
-        raise ValueError(f"no ground-truth files under {directory}")
+        raise ValueError("no graph files provided")
     return scenarios
 
 
-def layout(graph):
+def presentation(mode, count):
+    shared = (
+        "A node is one directional change owned by one component &mdash; "
+        "<code>(agent_id, variable, level)</code> &mdash; and an edge means the source change "
+        "directly drives the target change. Rows are the agents that own the change; columns are "
+        "causal depth from the input event."
+    )
+    if mode == "ground-truth":
+        return {
+            "page_title": "Glucose GT pathways",
+            "eyebrow": "Ground truth &middot; OpenStax 37.3",
+            "heading": "Glucose regulation ground-truth pathways",
+            "description": f"{count} textbook-derived causal graphs. {shared}",
+            "footer": "Source provenance is GT-only metadata and is ignored by evaluation.",
+        }
+    return {
+        "page_title": "Glucose predicted pathways",
+        "eyebrow": "Agent prediction &middot; pathway reconstruction",
+        "heading": "Glucose regulation predicted pathways",
+        "description": f"{count} agent-generated causal graphs rendered with the GT layout. {shared}",
+        "footer": "Only the presentation changed; prediction events and edges are unmodified.",
+    }
+
+
+def graph_steps(graph):
     parents = defaultdict(list)
     for edge in graph["edges"]:
         parents[edge["target"]].append(edge["source"])
@@ -43,114 +68,40 @@ def layout(graph):
             depth[identifier] = max((resolve(p) for p in parents[identifier]), default=-1) + 1
         return depth[identifier]
 
-    rank = {}
-    for index, event in enumerate(graph["events"]):
-        rank.setdefault(event["agent_id"], (resolve(event["id"]), index))
-    lanes = sorted(rank, key=rank.get)
-
-    columns = max(depth.values()) + 1
-    widths = [0.0] * columns
     for event in graph["events"]:
-        span = max(132, len(event["variable"]) * CHAR + GLYPH + PAD_X * 2)
-        widths[depth[event["id"]]] = max(widths[depth[event["id"]]], span)
-
-    x, cursor = [], GUTTER
-    for width in widths:
-        x.append(cursor)
-        cursor += width + COL_GAP
-
-    boxes, bands, top = {}, [], TOP
-    for agent in lanes:
-        members = [event for event in graph["events"] if event["agent_id"] == agent]
-        stacks = defaultdict(int)
-        for event in members:
-            column = depth[event["id"]]
-            boxes[event["id"]] = {
-                "x": x[column],
-                "w": widths[column],
-                "y": top + LANE_PAD + stacks[column] * (NODE_H + ROW_GAP),
-                "event": event,
-            }
-            stacks[column] += 1
-        rows = max(stacks.values())
-        height = rows * NODE_H + (rows - 1) * ROW_GAP + LANE_PAD * 2
-        bands.append({"agent": agent, "y": top, "height": height})
-        top += height
-
-    return {
-        "boxes": boxes, "bands": bands, "lanes": lanes, "x": x, "columns": columns,
-        "width": cursor - COL_GAP + RIGHT_PAD, "height": top + 18,
-    }
+        resolve(event["id"])
+    return depth
 
 
 def svg(graph):
-    plan = layout(graph)
-    width, boxes = plan["width"], plan["boxes"]
-    marks = []
-
-    for index, band in enumerate(plan["bands"]):
-        if index % 2 == 0:
-            marks.append(
-                f'<rect class="lane-band" x="0" y="{band["y"]}" '
-                f'width="{width:.0f}" height="{band["height"]}"/>'
-            )
-        marks.append(f'<line class="lane-rule" x1="0" y1="{band["y"]}" x2="{width:.0f}" y2="{band["y"]}"/>')
-        marks.append(
-            f'<text class="lane-label" x="14" y="{band["y"] + band["height"] / 2 + 4:.0f}">'
-            f'{escape(band["agent"].replace("_", " "))}</text>'
-        )
-    closing = plan["bands"][-1]["y"] + plan["bands"][-1]["height"]
-    marks.append(f'<line class="lane-rule" x1="0" y1="{closing}" x2="{width:.0f}" y2="{closing}"/>')
-    for index, left in enumerate(plan["x"]):
-        label = "INPUT" if index == 0 else f"STEP {index}"
-        marks.append(f'<text class="depth-tick" x="{left:.0f}" y="{TOP - 12}">{label}</text>')
-
-    for edge in graph["edges"]:
-        source, target = boxes[edge["source"]], boxes[edge["target"]]
-        x1, y1 = source["x"] + source["w"], source["y"] + NODE_H / 2
-        x2, y2 = target["x"], target["y"] + NODE_H / 2
-        bend = max(26, (x2 - x1) * 0.45)
-        marks.append(
-            f'<path class="edge" d="M{x1:.0f} {y1:.0f} C{x1 + bend:.0f} {y1:.0f} '
-            f'{x2 - bend:.0f} {y2:.0f} {x2 - 7:.0f} {y2:.0f}"/>'
-        )
-        marks.append(
-            f'<polygon class="arrow" points="{x2 - 7:.0f},{y2 - 4:.0f} '
-            f'{x2:.0f},{y2:.0f} {x2 - 7:.0f},{y2 + 4:.0f}"/>'
-        )
-
-    for identifier, box in boxes.items():
-        event = box["event"]
-        tone = "input" if event["type"] == "input" else ("up" if event["level"] == "increased" else "down")
-        marks.append(
-            f'<g class="node {tone}">'
-            f'<rect x="{box["x"]:.0f}" y="{box["y"]}" width="{box["w"]:.0f}" height="{NODE_H}"/>'
-            f'<text class="var" x="{box["x"] + PAD_X:.0f}" y="{box["y"] + 21}">{escape(event["variable"])}</text>'
-            f'<text class="glyph" x="{box["x"] + box["w"] - PAD_X:.0f}" y="{box["y"] + 22}" '
-            f'text-anchor="end">{GLYPHS[event["level"]]}</text>'
-            f'<text class="eid" x="{box["x"] + 2:.0f}" y="{box["y"] - 4}">{escape(identifier)}</text>'
-            f'</g>'
-        )
-
+    steps = graph_steps(graph)
+    labels = ["INPUT", *(f"STEP {index}" for index in range(1, max(steps.values()) + 1))]
     caption = (
-        f'{graph["title"]}: {len(graph["events"])} events across {len(plan["lanes"])} agents, '
-        f'{len(graph["edges"])} causal edges, {plan["columns"]} causal steps'
+        f'{graph["title"]}: {len(graph["events"])} events across '
+        f'{len({event["agent_id"] for event in graph["events"]})} agents, '
+        f'{len(graph["edges"])} causal edges, {len(labels)} causal steps'
     )
-    return (
-        f'<svg viewBox="0 0 {width:.0f} {plan["height"]:.0f}" width="{width:.0f}" '
-        f'role="img" aria-label="{escape(caption)}">{"".join(marks)}</svg>'
+    return render_svg(
+        graph["events"],
+        graph["edges"],
+        steps,
+        labels,
+        f'arrow-{graph["scenario_id"]}',
+        caption,
     )
 
 
 def panel(graph):
-    source = graph["source"]
     meta = [
         f'{len(graph["events"])} events',
         f'{len(graph["edges"])} edges',
         f'{len({event["agent_id"] for event in graph["events"]})} agents',
-        f'p. {", ".join(map(str, source["pages"]))} · lines {", ".join(source["line_ranges"])}',
-        f'evidence: {source["evidence"]}',
     ]
+    if source := graph.get("source"):
+        meta.extend([
+            f'p. {", ".join(map(str, source["pages"]))} · lines {", ".join(source["line_ranges"])}',
+            f'evidence: {source["evidence"]}',
+        ])
     cells = "".join(f"<span>{escape(item)}</span>" for item in meta)
     return (
         f'<section class="panel"><div class="panel-head">'
@@ -194,18 +145,50 @@ def matrix(scenarios):
     )
 
 
+def matrix_section(scenarios):
+    if len(scenarios) == 1:
+        return ""
+    return (
+        '<div class="matrix-wrap"><h3>Agent coverage</h3>'
+        '<p class="note">Which component owns at least one event in each scenario. Every scenario '
+        'is run against the same configured component set, so a sparse column is a scenario that '
+        f'exercises few agents.</p>{matrix(scenarios)}</div>'
+    )
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Render ground-truth pathway graphs as one page")
-    parser.add_argument("--ground-truth", type=Path, required=True)
+    parser = argparse.ArgumentParser(description="Render pathway graphs as one page")
+    sources = parser.add_mutually_exclusive_group(required=True)
+    sources.add_argument("--ground-truth", type=Path)
+    sources.add_argument("--pathway", type=Path, action="append")
+    parser.add_argument("--mode", choices=("ground-truth", "prediction"), required=True)
     parser.add_argument("--output", type=Path, required=True)
     arguments = parser.parse_args()
 
-    scenarios = load(arguments.ground_truth)
+    paths = (
+        sorted(arguments.ground_truth.glob("*.json"))
+        if arguments.ground_truth
+        else arguments.pathway
+    )
+    source = (
+        f"{arguments.ground_truth}/*.json"
+        if arguments.ground_truth
+        else ", ".join(map(str, arguments.pathway))
+    )
+    scenarios = load(paths)
+    labels = presentation(arguments.mode, len(scenarios))
     page = TEMPLATE.read_text()
     for placeholder, value in {
+        "__PAGE_TITLE__": escape(labels["page_title"]),
+        "__EYEBROW__": labels["eyebrow"],
+        "__HEADING__": escape(labels["heading"]),
+        "__DESCRIPTION__": labels["description"],
+        "__GRAPH_STYLE__": GRAPH_STYLE,
         "__RAIL__": rail(scenarios),
         "__PANELS__": "".join(panel(graph) for graph in scenarios),
-        "__MATRIX__": matrix(scenarios),
+        "__MATRIX_SECTION__": matrix_section(scenarios),
+        "__SOURCE__": escape(source),
+        "__FOOTER__": escape(labels["footer"]),
     }.items():
         page = page.replace(placeholder, value)
 

@@ -5,12 +5,9 @@ from pathlib import Path
 
 import yaml
 
-from src.pathway import ARROWS, display_edges, longest_chain, signed
-
-CHIP_W, CHIP_H, CHIP_GAP, HEAD_H, BOX_PAD = 150, 32, 8, 15, 9
-BOX_H = BOX_PAD * 2 + HEAD_H + CHIP_H
-CHIP_Y = BOX_PAD + HEAD_H
-GAP_X, GAP_Y, PAD, BOW = 22, 68, 18, 78
+from src.graph_view import STYLE as GRAPH_STYLE
+from src.graph_view import render_svg
+from src.pathway import ARROWS, depths, longest_chain, signed
 
 STYLE = """
 :root {
@@ -27,6 +24,15 @@ STYLE = """
   --edge: #a9a89f;
   --in: #8557d6;
   --out: #1c8a63;
+  --surface: var(--surface-1);
+  --sunken: var(--surface-2);
+  --ink: var(--text-primary);
+  --muted: var(--text-muted);
+  --line: var(--border);
+  --accent: #0e6a5e;
+  --accent-soft: #d9ebe7;
+  --up-soft: #f4e3dc;
+  --down-soft: #dde7f1;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -43,6 +49,10 @@ STYLE = """
     --edge: #5c5b53;
     --in: #a988ec;
     --out: #48b98d;
+    --accent: #48bca9;
+    --accent-soft: #143630;
+    --up-soft: #3a221a;
+    --down-soft: #17293a;
   }
 }
 * { box-sizing: border-box; }
@@ -73,18 +83,12 @@ section { margin-top: 34px; }
 .tile { background: var(--surface-1); padding: 15px 17px; }
 .tile .label { font-size: 12.5px; color: var(--text-secondary); }
 .tile .value { font-size: 23px; font-weight: 600; letter-spacing: -0.01em; margin-top: 3px; }
-.scroll { overflow-x: auto; }
-svg { display: block; }
-.group rect { fill: var(--surface-2); stroke: var(--border); stroke-width: 1px; }
-.node rect { fill: var(--surface-1); stroke-width: 2px; }
-.node.up rect { stroke: var(--up); fill: color-mix(in oklab, var(--up) 9%, var(--surface-1)); }
-.node.down rect { stroke: var(--down); fill: color-mix(in oklab, var(--down) 9%, var(--surface-1)); }
-.n-var { font-size: 12.5px; font-weight: 600; fill: var(--text-primary); text-anchor: middle; }
-.n-agent { font-size: 10.5px; fill: var(--text-muted); text-anchor: middle; }
-.edge { fill: none; stroke: var(--edge); stroke-width: 2px; }
-.edge.feedback { stroke: var(--text-secondary); stroke-dasharray: 5 4; }
-.head { fill: var(--edge); }
-.head-fb { fill: var(--text-secondary); }
+.graph-card + .graph-card { margin-top: 14px; }
+.graph-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-bottom: 4px; }
+.graph-head h3 { margin: 0; flex: 1 1 320px; }
+.graph-stats { font: 11.5px ui-monospace, monospace; color: var(--text-muted); }
+.graph-note { margin: 0 0 14px; color: var(--text-secondary); font-size: 13px; max-width: 78ch; }
+.graph-card .scroll svg { max-width: 100%; }
 .legend { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 16px;
           font-size: 12.5px; color: var(--text-secondary); }
 .legend span { display: inline-flex; align-items: center; gap: 7px; }
@@ -92,7 +96,7 @@ svg { display: block; }
 .swatch { width: 13px; height: 13px; border-radius: 3px; border: 2px solid; }
 .swatch.up { border-color: var(--up); background: color-mix(in oklab, var(--up) 9%, var(--surface-1)); }
 .swatch.down { border-color: var(--down); background: color-mix(in oklab, var(--down) 9%, var(--surface-1)); }
-.swatch.group { width: 22px; border-color: var(--border); background: var(--surface-2); }
+.swatch.input { border-color: var(--accent); background: var(--accent-soft); }
 .dash { width: 24px; height: 0; border-top: 2px dashed var(--text-secondary); }
 .solid { width: 24px; height: 0; border-top: 2px solid var(--edge); }
 table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
@@ -136,6 +140,7 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
 .warn { color: var(--up); font-size: 12.5px; margin: 6px 0 0; }
 .note { color: var(--text-muted); font-size: 12.5px; margin: 6px 0 0; }
 """
+STYLE += GRAPH_STYLE
 
 
 def build(run_dir):
@@ -167,7 +172,7 @@ def _page(name, trace, pathway, run, config):
         f"<title>{escape(title)} — organ agents</title><style>{STYLE}</style></head><body><main>"
         f"{_header(name, title, run, config)}"
         f"{_summary(pathway, run)}"
-        f"{_graph_section(pathway)}"
+        f"{_graph_section(trace, pathway)}"
         f"{_rounds_section(trace)}"
         f"</main></body></html>"
     )
@@ -196,8 +201,7 @@ def _header(name, title, run, config):
 def _summary(pathway, run):
     usage = run["usage"]
     tiles = {
-        "Reasoning calls": usage["reasoning_calls"],
-        "Routing calls": usage["routing_calls"],
+        "LLM calls": usage["llm_calls"],
         "Prompt tokens": usage["prompt_tokens"],
         "Cached tokens": usage["cached_tokens"],
         "Output tokens": usage["output_tokens"],
@@ -219,7 +223,33 @@ def _summary(pathway, run):
     )
 
 
-def _graph_section(pathway):
+def _graph_section(trace, pathway):
+    raw_events = trace["events"]
+    raw_event_ids = {event["id"] for event in raw_events}
+    raw_edges = []
+    for event in raw_events:
+        if event["caused_by"] is None:
+            continue
+        if event["caused_by"] not in raw_event_ids:
+            raise ValueError(
+                f"trace event '{event['id']}' cites unknown cause '{event['caused_by']}'"
+            )
+        raw_edges.append({"source": event["caused_by"], "target": event["id"]})
+    raw_steps = {event["id"]: event["round"] for event in raw_events}
+    raw_labels = [
+        "INPUT" if index == 0 else f"ROUND {index}"
+        for index in range(max(raw_steps.values()) + 1)
+    ]
+
+    canonical_steps = depths(pathway)
+    canonical_event_ids = {event["id"] for event in pathway["events"]}
+    if missing := canonical_event_ids - canonical_steps.keys():
+        raise ValueError(f"canonical graph has unreachable events: {sorted(missing)}")
+    canonical_labels = [
+        "INPUT" if index == 0 else f"DEPTH {index}"
+        for index in range(max(canonical_steps.values()) + 1)
+    ]
+
     chain = longest_chain(pathway)
     events = {event["id"]: event for event in pathway["events"]}
     steps = "<i>→</i>".join(
@@ -230,63 +260,109 @@ def _graph_section(pathway):
         f"<h3 style=\"margin-top:22px\">Longest chain</h3>"
         f"<div class=\"chain\">{steps}</div>" if chain else ""
     )
+    raw_note = (
+        "Every emitted event occurrence from trace.json. Columns are the recorded execution "
+        "rounds; repeated states remain separate."
+    )
+    canonical_note = (
+        "Deduplicated pathway.json used by evaluation. Columns are shortest causal depth; "
+        "dashed edges run backward or within one depth after remapping."
+    )
+    raw_card = _graph_card(
+        "1. Raw trace",
+        raw_note,
+        raw_events,
+        raw_edges,
+        raw_steps,
+        raw_labels,
+        "trace-arrow",
+    )
+    canonical_card = _graph_card(
+        "2. Canonical graph",
+        canonical_note,
+        pathway["events"],
+        pathway["edges"],
+        canonical_steps,
+        canonical_labels,
+        "canonical-arrow",
+        longest,
+    )
     return (
-        f"<section><h2>Discovered pathway</h2>"
-        f"<div class=\"card\">{_graph(display_edges(pathway))}{_legend()}{longest}</div></section>"
+        f"<section><h2>Pathway graphs</h2>"
+        f"{raw_card}{canonical_card}"
+        f"</section>"
+    )
+
+
+def _graph_card(title, note, events, edges, steps, labels, marker_id, extra=""):
+    stats = (
+        f"{len(events)} events · {len(edges)} edges · "
+        f"{len({event['agent_id'] for event in events})} agents"
+    )
+    graph = render_svg(events, edges, steps, labels, marker_id, f"{title}: {stats}")
+    return (
+        f'<div class="card graph-card"><div class="graph-head">'
+        f'<h3>{escape(title)}</h3><span class="graph-stats">{escape(stats)}</span></div>'
+        f'<p class="graph-note">{escape(note)}</p>{graph}{_legend()}{extra}</div>'
     )
 
 
 def _rounds_section(trace):
+    events = {event["id"]: event for event in trace["events"]}
     records = {}
     for record in trace["records"]:
         records.setdefault(record["round"], []).append(record)
 
-    blocks = "".join(_round_block(entry, records.get(entry["round"], [])) for entry in trace["rounds"])
+    blocks = "".join(
+        _round_block(entry, records.get(entry["round"], []), events)
+        for entry in trace["rounds"]
+    )
     return f"<section><h2>Rounds</h2>{blocks}</section>"
 
 
-def _round_block(entry, records):
+def _round_block(entry, records, events):
     index = entry["round"]
     agents = ", ".join(entry["dispatch"]) or "nothing dispatched"
     dropped = "".join(
-        f"<p class=\"warn\">Unrouted: {escape(signed(event['variable'], event['level']))}</p>"
-        for event in entry["dropped"]
+        f"<p class=\"warn\">Unrouted: "
+        f"{escape(signed(events[event_id]['variable'], events[event_id]['level']))}</p>"
+        for event_id in entry["dropped"]
     )
     closures = "".join(
         f"<p class=\"note\">Homeostatic closure: "
-        f"{escape(signed(event['variable'], event['level']))}</p>"
-        for event in entry.get("homeostatic_closures", [])
+        f"{escape(signed(events[event_id]['variable'], events[event_id]['level']))}</p>"
+        for event_id in entry.get("homeostatic_closures", [])
     )
-    routing = _calls_block("Routing calls", entry["routing"]) if entry["routing"] else ""
-    agent_blocks = "".join(_agent_block(record) for record in records)
+    agent_blocks = "".join(_agent_block(record, events) for record in records)
 
     return (
         f"<details><summary>Round {index}<span class=\"tag\">{escape(agents)}</span></summary>"
-        f"<div class=\"body\">{dropped}{closures}{routing}{agent_blocks}</div></details>"
+        f"<div class=\"body\">{dropped}{closures}{agent_blocks}</div></details>"
     )
 
 
-def _agent_block(record):
+def _agent_block(record, events_by_id):
     trace = record["trace"]
     incoming = ", ".join(
-        signed(event["variable"], event["level"]) for event in record["incoming"]
+        signed(events_by_id[event_id]["variable"], events_by_id[event_id]["level"])
+        for event_id in record["incoming"]
     )
     events = "".join(
         f"<tr><td>{escape(event['id'])}</td>"
         f"<td>{escape(event['agent_id'] + '.' + signed(event['variable'], event['level']))}</td>"
         f"<td>{escape(event['caused_by'])}</td></tr>"
-        for event in record["events"]
+        for event in (events_by_id[event_id] for event_id in record["events"])
     )
     table = (
         f"<table><tr><th>ID</th><th>Event</th><th>Caused by</th></tr>{events}</table>"
         if events else "<p class=\"empty\">No events emitted.</p>"
     )
     cost = f"{trace['total_tokens']:,} tokens" if trace else "deterministic"
-    calls = _calls_block("LLM call", [trace]) if trace else ""
+    call = _call_block(trace) if trace else ""
     return (
         f"<details class=\"inner\"><summary>{escape(record['agent'])}"
         f"<span class=\"tag\">← {escape(incoming)} · {cost}</span></summary>"
-        f"<div class=\"body\">{table}{calls}</div></details>"
+        f"<div class=\"body\">{table}{call}</div></details>"
     )
 
 
@@ -297,17 +373,13 @@ CALL_PARTS = (
 )
 
 
-def _calls_block(label, calls):
-    blocks = "".join(
-        f"<h3>{escape(label)}{f' {index + 1}' if len(calls) > 1 else ''} · "
-        f"{call['prompt_tokens']:,} input / {call['output_tokens']:,} output tokens</h3>"
-        f"<div class=\"call\">{_call_parts(call)}</div>"
-        for index, call in enumerate(calls)
-    )
+def _call_block(call):
     return (
-        f"<details class=\"inner\"><summary>{escape(label)}"
-        f"<span class=\"tag\">{len(calls)} call{'s' if len(calls) > 1 else ''}</span></summary>"
-        f"<div class=\"body\">{blocks}</div></details>"
+        f"<details class=\"inner\"><summary>LLM call"
+        f"<span class=\"tag\">{call['total_tokens']:,} tokens</span></summary>"
+        f"<div class=\"body\"><h3>{call['prompt_tokens']:,} input / "
+        f"{call['output_tokens']:,} output tokens</h3>"
+        f"<div class=\"call\">{_call_parts(call)}</div></div></details>"
     )
 
 
@@ -321,155 +393,14 @@ def _call_parts(call):
     )
 
 
-def _box_width(count):
-    return BOX_PAD * 2 + count * CHIP_W + (count - 1) * CHIP_GAP
-
-
-def _span(groups):
-    return sum(_box_width(len(nodes)) for nodes in groups.values()) + GAP_X * (len(groups) - 1)
-
-
-def _ordered(nodes, pairs):
-    remaining, ordered = sorted(nodes), []
-    while remaining:
-        node = next(
-            (node for node in remaining if not any(a in remaining for a, b in pairs if b == node)),
-            remaining[0],
-        )
-        ordered.append(node)
-        remaining.remove(node)
-    return ordered
-
-
-def _layout(edges):
-    layers, agents = {}, {}
-    for edge in edges:
-        source, target = edge["source"], edge["target"]
-        layers[source] = min(layers.get(source, edge["round"]), edge["round"])
-        layers[target] = min(layers.get(target, edge["round"] + 1), edge["round"] + 1)
-        agents.setdefault(target, target[1])
-        agents.setdefault(source, source[1])
-
-    pairs = {(edge["source"], edge["target"]) for edge in edges}
-    rows = {}
-    for node in sorted(layers, key=lambda node: (layers[node], agents[node])):
-        rows.setdefault(layers[node], {}).setdefault(agents[node], []).append(node)
-
-    width = max(_span(groups) for groups in rows.values())
-    placed, boxes = {}, []
-    for order, layer in enumerate(sorted(rows)):
-        groups = rows[layer]
-        x, y = PAD + (width - _span(groups)) / 2, PAD + order * (BOX_H + GAP_Y)
-        for index, (agent, nodes) in enumerate(groups.items()):
-            box = {"x": x, "y": y, "width": _box_width(len(nodes)), "agent": agent}
-            boxes.append(box)
-            for column, node in enumerate(_ordered(nodes, pairs)):
-                placed[node] = {
-                    "x": x + BOX_PAD + column * (CHIP_W + CHIP_GAP),
-                    "y": y,
-                    "right": x + box["width"],
-                    "box": (layer, index),
-                }
-            x += box["width"] + GAP_X
-    return placed, boxes, width, len(rows)
-
-
-def _graph(edges):
-    if not edges:
-        return "<p class=\"empty\">No attributed causal edges.</p>"
-
-    placed, boxes, width, depth = _layout(edges)
-    paths, backward = [], 0
-    for edge in edges:
-        source = placed[edge["source"]]
-        target = placed[edge["target"]]
-        if target["y"] > source["y"]:
-            path, style = _forward(source, target), "edge"
-        elif target["y"] == source["y"]:
-            path, style = _sideways(source, target), "edge"
-        else:
-            path, style = _backward(source, target, width, backward), "edge feedback"
-            backward += 1
-        marker = "head-fb" if "feedback" in style else "head"
-        paths.append(f"<path class=\"{style}\" marker-end=\"url(#{marker})\" d=\"{path}\"/>")
-
-    groups = "".join(_box(box) for box in boxes)
-    nodes = "".join(_chip(node, position) for node, position in placed.items())
-    total_width = width + PAD * 2 + (BOW + backward * 12 if backward else 0)
-    height = PAD * 2 + depth * (BOX_H + GAP_Y) - GAP_Y
-    return (
-        f"<div class=\"scroll\"><svg viewBox=\"0 0 {total_width:.0f} {height:.0f}\" "
-        f"width=\"{total_width:.0f}\" height=\"{height:.0f}\" role=\"img\">"
-        f"{_markers()}{groups}{''.join(paths)}{nodes}</svg></div>"
-    )
-
-
-def _box(box):
-    return (
-        f"<g class=\"group\"><title>{escape(box['agent'])}</title>"
-        f"<rect x=\"{box['x']:.0f}\" y=\"{box['y']:.0f}\" "
-        f"width=\"{box['width']:.0f}\" height=\"{BOX_H}\" rx=\"13\"/>"
-        f"<text class=\"n-agent\" x=\"{box['x'] + box['width'] / 2:.0f}\" "
-        f"y=\"{box['y'] + BOX_PAD + 10:.0f}\">{escape(box['agent'])}</text></g>"
-    )
-
-
-def _chip(node, position):
-    event_id, agent, variable, level = node
-    label = variable if len(variable) <= 19 else variable[:18] + "…"
-    style = {"decreased": "down", "increased": "up"}[level]
-    x, y = position["x"], position["y"] + CHIP_Y
-    return (
-        f"<g class=\"node {style}\"><title>{escape(event_id + ': ' + agent + '.' + signed(variable, level))}</title>"
-        f"<rect x=\"{x:.0f}\" y=\"{y:.0f}\" width=\"{CHIP_W}\" height=\"{CHIP_H}\" rx=\"8\"/>"
-        f"<text class=\"n-var\" x=\"{x + CHIP_W / 2:.0f}\" y=\"{y + CHIP_H / 2 + 4:.0f}\">"
-        f"{escape(signed(label, level))}</text></g>"
-    )
-
-
-def _forward(source, target):
-    x1, y1 = source["x"] + CHIP_W / 2, source["y"] + BOX_H
-    x2, y2 = target["x"] + CHIP_W / 2, target["y"]
-    middle = (y1 + y2) / 2
-    return f"M{x1:.0f},{y1:.0f} C{x1:.0f},{middle:.0f} {x2:.0f},{middle:.0f} {x2:.0f},{y2:.0f}"
-
-
-def _sideways(source, target):
-    rightward = target["x"] > source["x"]
-    x1 = source["x"] + CHIP_W if rightward else source["x"]
-    x2 = target["x"] if rightward else target["x"] + CHIP_W
-    y = source["y"] + CHIP_Y + CHIP_H / 2
-    dip = y + CHIP_H * 0.7
-    middle = (x1 + x2) / 2
-    return f"M{x1:.0f},{y:.0f} C{middle:.0f},{dip:.0f} {middle:.0f},{dip:.0f} {x2:.0f},{y:.0f}"
-
-
-def _backward(source, target, width, index):
-    x1, y1 = source["right"], source["y"] + CHIP_Y + CHIP_H / 2
-    x2, y2 = target["right"], target["y"] + CHIP_Y + CHIP_H / 2
-    bow = width + PAD + BOW * 0.55 + index * 12
-    return f"M{x1:.0f},{y1:.0f} C{bow:.0f},{y1:.0f} {bow:.0f},{y2:.0f} {x2:.0f},{y2:.0f}"
-
-
-def _markers():
-    return (
-        "<defs>"
-        "<marker id=\"head\" viewBox=\"0 0 9 9\" refX=\"8\" refY=\"4.5\" markerWidth=\"5.5\" "
-        "markerHeight=\"5.5\" orient=\"auto\"><path class=\"head\" d=\"M0,0 L9,4.5 L0,9 z\"/></marker>"
-        "<marker id=\"head-fb\" viewBox=\"0 0 9 9\" refX=\"8\" refY=\"4.5\" markerWidth=\"5.5\" "
-        "markerHeight=\"5.5\" orient=\"auto\"><path class=\"head-fb\" d=\"M0,0 L9,4.5 L0,9 z\"/></marker>"
-        "</defs>"
-    )
-
-
 def _legend():
     return (
         "<div class=\"legend\">"
+        "<span><i class=\"swatch input\"></i>input</span>"
         "<span><i class=\"swatch down\"></i>decreased ↓</span>"
         "<span><i class=\"swatch up\"></i>increased ↑</span>"
-        "<span><i class=\"swatch group\"></i>one agent</span>"
         "<span><i class=\"solid\"></i>forward</span>"
-        "<span><i class=\"dash\"></i>feedback (loop closure, not expanded)</span>"
+        "<span><i class=\"dash\"></i>backward or same-depth after remapping</span>"
         "</div>"
     )
 

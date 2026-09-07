@@ -5,14 +5,13 @@ from src.schemas import FLIP, Event
 
 
 class Runner:
-    def __init__(self, router, tracker, llm, config, enforce_vocabulary):
+    def __init__(self, router, tracker, llm, config):
         self.router = router
         self.tracker = tracker
         self.llm = llm
         self.max_rounds = config["max_rounds"]
         self.max_llm_calls = config["max_llm_calls"]
         self.workers = config["workers"]
-        self.enforce_vocabulary = enforce_vocabulary
         self.next_event_id = 1
 
     def run(self, perturbation):
@@ -23,23 +22,16 @@ class Runner:
         events = [perturbation]
 
         for index in range(self.max_rounds):
-            mark = len(self.llm.log)
             active, closures = self._partition(events, perturbation)
             bundles, dropped = self._dispatch(active)
-            self.tracker.begin_round(
-                index,
-                bundles,
-                dropped,
-                closures,
-                self.llm.log[mark:],
-            )
+            self.tracker.begin_round(index, bundles, dropped, closures)
 
             if not bundles:
                 if closures and not active:
                     return "homeostatic_closure"
                 return "no_routed_events"
             pending_calls = sum(leaf.uses_llm for leaf in bundles)
-            if len(self.llm.log) + pending_calls > self.max_llm_calls:
+            if self.llm.call_count + pending_calls > self.max_llm_calls:
                 return "max_llm_calls"
 
             events = self._react(bundles, index)
@@ -88,9 +80,9 @@ class Runner:
         incoming_ids = {event.id for event in incoming}
         events = []
         for change in changes:
-            if self.enforce_vocabulary and change.variable not in leaf.variables:
+            if change.variable not in leaf.outputs:
                 raise ValueError(
-                    f"'{leaf.id}' returned variable '{change.variable}' outside its vocabulary"
+                    f"'{leaf.id}' returned variable '{change.variable}' outside its outputs"
                 )
             if change.caused_by not in incoming_ids:
                 raise ValueError(
@@ -104,7 +96,6 @@ class Runner:
                 type="response",
                 caused_by=change.caused_by,
                 round=round_index,
-                generated_by=leaf.id,
             ))
             self.next_event_id += 1
         return events

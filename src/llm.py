@@ -30,7 +30,7 @@ class LLM:
             raise ValueError(
                 f"max_output_tokens must be between 1 and {MAX_CONTEXT_TOKENS:,}"
             )
-        self.log = []
+        self.call_count = 0
         self.caches = {}
         self.lock = threading.Lock()
 
@@ -65,7 +65,7 @@ class LLM:
             usage.total_token_count or 0,
         )
         with self.lock:
-            self.log.append(completion)
+            self.call_count += 1
         return completion
 
     def _generation_settings(self, response_model):

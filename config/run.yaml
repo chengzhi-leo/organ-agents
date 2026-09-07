@@ -7,18 +7,14 @@ generation:
   temperature: 0.0
   max_output_tokens: 1024
 
-agent:
-  vocabulary_mode: constrained
-
-vocabulary: config/vocabularies/glucose.yaml
+schema: config/schema_mvp.yaml
 
 body:
   definition: config/domains/glucose.yaml
   knowledge: knowledge
 
 routing:
-  mode: broadcast
-  retries: 1
+  mode: rule_based
 
 simulation:
   max_rounds: 10
@@ -30,4 +26,4 @@ debug:
   save_trace: true
 
 output:
-  directory: outputs/logs/
+  directory: outputs/experiments/glucose_mvp

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Glucose GT Pathways</title>
+<title>__PAGE_TITLE__</title>
 <style>
 :root {
   --ground: #f6f7f6;
@@ -65,25 +65,7 @@ section.panel { background: var(--surface); border: 1px solid var(--line); borde
 .canvas { overflow-x: auto; padding: 4px 0 8px; }
 .canvas svg { display: block; height: auto; max-width: 100%; }
 
-.lane-band { fill: var(--sunken); }
-.lane-rule { stroke: var(--line); stroke-width: 1; }
-.lane-label { font: 11px system-ui, sans-serif; fill: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; }
-.depth-tick { font: 10px ui-monospace, monospace; fill: var(--muted); letter-spacing: 0.1em; }
-
-.node rect { fill: var(--surface); stroke: var(--line); stroke-width: 1.25; rx: 3; }
-.node.up rect { stroke: var(--up); fill: var(--up-soft); }
-.node.down rect { stroke: var(--down); fill: var(--down-soft); }
-.node.input rect { stroke: var(--accent); stroke-width: 2; fill: var(--accent-soft); }
-.node text.var { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; fill: var(--ink); }
-.node text.glyph { font: 13px system-ui, sans-serif; }
-.node.up text.glyph { fill: var(--up); }
-.node.down text.glyph { fill: var(--down); }
-.node.input text.glyph { fill: var(--accent); }
-.node text.eid { font: 9.5px ui-monospace, monospace; fill: var(--muted); }
-
-.edge { fill: none; stroke: var(--muted); stroke-width: 1.4; opacity: 0.5; }
-.arrow { fill: var(--muted); opacity: 0.55; }
-.node:hover rect { stroke-width: 2.5; }
+__GRAPH_STYLE__
 
 .matrix-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 18px 20px 6px; overflow-x: auto; }
 table { border-collapse: collapse; font-size: 12.5px; width: 100%; }
@@ -101,9 +83,9 @@ footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--lin
 <body>
 <div class="wrap">
   <header>
-    <p class="eyebrow">Ground truth &middot; OpenStax 37.3</p>
-    <h1>Glucose regulation ground-truth pathways</h1>
-    <p>Seven textbook-derived causal graphs. A node is one directional change owned by one component &mdash; <code>(agent_id, variable, level)</code> &mdash; and an edge means the source change directly drives the target change. Rows are the agents that own the change; columns are causal depth from the input event.</p>
+    <p class="eyebrow">__EYEBROW__</p>
+    <h1>__HEADING__</h1>
+    <p>__DESCRIPTION__</p>
     <div class="rail">__RAIL__</div>
     <div class="rail legend">
       <span><span class="chip input">input</span> perturbation entering the body</span>
@@ -114,14 +96,10 @@ footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--lin
 
   __PANELS__
 
-  <div class="matrix-wrap">
-    <h3>Agent coverage</h3>
-    <p class="note">Which component owns at least one event in each scenario. Every scenario is run against the same configured component set, so a sparse column is a scenario that exercises few agents.</p>
-    __MATRIX__
-  </div>
+  __MATRIX_SECTION__
 
   <footer>
-    Generated from <code>data/ground_truth/glucose/*.json</code> by <code>scripts/ground_truth/visualize_gt.py</code>. Source provenance is GT-only metadata and is ignored by evaluation.
+    Generated from <code>__SOURCE__</code> by <code>scripts/ground_truth/visualize_gt.py</code>. __FOOTER__
   </footer>
 </div>
 

@@ -39,9 +39,7 @@ wheels/
 *.ipynb_checkpoints/
 
 # Data & outputs
-data/*
-!data/ground_truth/
-!data/ground_truth/**
+data/
 outputs/
 archive/glucose_simulator/model/
 archive/glucose_simulator/results/
@@ -63,6 +61,5 @@ knowledge/
 
 # Local secret backups
 .env.bak*
-data/
 docs/
 archive/

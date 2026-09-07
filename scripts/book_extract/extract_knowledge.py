@@ -2,7 +2,6 @@ import argparse
 import json
 import sys
 from collections import defaultdict
-from dataclasses import dataclass
 from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -206,50 +205,10 @@ class LeakageJudgment(StrictModel):
         return self
 
 
-@dataclass
-class ModuleResult:
-    module_id: str
-    extracted: str
-    judgment: LeakageJudgment
-    final: str
-    calls: list
-
-
-@dataclass
-class ExtractionResult:
-    extraction: ExtractedKnowledge
-    modules: list[ModuleResult]
-    calls: list
-
-
 class KnowledgeExtractionPipeline:
     def __init__(self, llm, modules):
         self.llm = llm
         self.modules = modules
-
-    def run(self, chapter_prompt):
-        extraction = self.extract(chapter_prompt)
-        modules = []
-        calls = [extraction]
-        for knowledge_file in extraction.value.knowledge_files:
-            judgment = self.judge(knowledge_file)
-            final = knowledge_file.knowledge
-            module_calls = [judgment]
-            if judgment.value.has_leakage:
-                repair = self.repair(knowledge_file, judgment.value)
-                final = repair.value.knowledge
-                module_calls.append(repair)
-            modules.append(
-                ModuleResult(
-                    knowledge_file.module_id,
-                    knowledge_file.knowledge,
-                    judgment.value,
-                    final,
-                    module_calls,
-                )
-            )
-            calls.extend(module_calls)
-        return ExtractionResult(extraction.value, modules, calls)
 
     def extract(self, chapter_prompt):
         completion = self.llm.generate(
