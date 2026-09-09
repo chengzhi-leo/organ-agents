@@ -5,8 +5,8 @@ from pathlib import Path
 
 import yaml
 
-from src.graph_view import STYLE as GRAPH_STYLE
-from src.graph_view import render_svg
+from utils.graph_view import STYLE as GRAPH_STYLE
+from utils.graph_view import render_svg
 from src.pathway import ARROWS, depths, longest_chain, signed
 
 STYLE = """
@@ -172,7 +172,9 @@ def _page(name, trace, pathway, run, config):
         f"<title>{escape(title)} — organ agents</title><style>{STYLE}</style></head><body><main>"
         f"{_header(name, title, run, config)}"
         f"{_summary(pathway, run)}"
+        f"{_meta_agent_section(trace)}"
         f"{_graph_section(trace, pathway)}"
+        f"{_normalization_section(trace)}"
         f"{_rounds_section(trace)}"
         f"</main></body></html>"
     )
@@ -184,6 +186,8 @@ def _header(name, title, run, config):
         "Perturbation": title,
         "Model": run["model"],
         "Temperature": config["generation"]["temperature"],
+        "Router": config["routing"]["mode"],
+        "Meta Agent": "enabled" if run["meta_agent"]["enabled"] else "disabled",
         "Max rounds": simulation["max_rounds"],
         "Workers": simulation["workers"],
         "Run": name,
@@ -191,8 +195,8 @@ def _header(name, title, run, config):
     meta = "".join(f"<div>{escape(k)}<b>{escape(str(v))}</b></div>" for k, v in fields.items())
     return (
         f"<h1>Pathway reconstruction — {escape(title)}</h1>"
-        f"<p class=\"sub\">Hierarchical organ agents propagating a single perturbation, "
-        f"one round per causal hop. Terminated on "
+        f"<p class=\"sub\">Physiological agents propagating a single perturbation, "
+        f"with deterministic representation translation between agent rounds. Terminated on "
         f"<span class=\"badge\">{escape(run['termination'])}</span></p>"
         f"<div class=\"meta\">{meta}</div>"
     )
@@ -202,6 +206,9 @@ def _summary(pathway, run):
     usage = run["usage"]
     tiles = {
         "LLM calls": usage["llm_calls"],
+        "Meta calls": usage["meta_agent"]["llm_calls"],
+        "Router calls": usage["router"]["llm_calls"],
+        "Agent calls": usage["agents"]["llm_calls"],
         "Prompt tokens": usage["prompt_tokens"],
         "Cached tokens": usage["cached_tokens"],
         "Output tokens": usage["output_tokens"],
@@ -223,6 +230,23 @@ def _summary(pathway, run):
     )
 
 
+def _meta_agent_section(trace):
+    selection = trace["meta_agent"]
+    agents = ", ".join(selection["selected_agents"]) or "no agents"
+    if not selection["enabled"]:
+        return (
+            f"<section><h2>Agent selection</h2><div class=\"card\">"
+            f"<p class=\"empty\">Meta Agent disabled. Active agents: {escape(agents)}.</p>"
+            f"</div></section>"
+        )
+    call = selection["trace"]
+    return (
+        f"<section><h2>Meta Agent</h2><div class=\"card\">"
+        f"<h3>Selected agents</h3><p>{escape(agents)}</p>{_call_block(call)}"
+        f"</div></section>"
+    )
+
+
 def _graph_section(trace, pathway):
     raw_events = trace["events"]
     raw_event_ids = {event["id"] for event in raw_events}
@@ -237,7 +261,7 @@ def _graph_section(trace, pathway):
         raw_edges.append({"source": event["caused_by"], "target": event["id"]})
     raw_steps = {event["id"]: event["round"] for event in raw_events}
     raw_labels = [
-        "INPUT" if index == 0 else f"ROUND {index}"
+        "INPUT" if index == 0 else f"DEPTH {index}"
         for index in range(max(raw_steps.values()) + 1)
     ]
 
@@ -261,8 +285,8 @@ def _graph_section(trace, pathway):
         f"<div class=\"chain\">{steps}</div>" if chain else ""
     )
     raw_note = (
-        "Every emitted event occurrence from trace.json. Columns are the recorded execution "
-        "rounds; repeated states remain separate."
+        "Every emitted event occurrence from trace.json. Columns are causal depths; repeated "
+        "states remain separate."
     )
     canonical_note = (
         "Deduplicated pathway.json used by evaluation. Columns are shortest causal depth; "
@@ -297,13 +321,43 @@ def _graph_section(trace, pathway):
 def _graph_card(title, note, events, edges, steps, labels, marker_id, extra=""):
     stats = (
         f"{len(events)} events · {len(edges)} edges · "
-        f"{len({event['agent_id'] for event in events})} agents"
+        f"{len({event['agent_id'] for event in events})} components"
     )
     graph = render_svg(events, edges, steps, labels, marker_id, f"{title}: {stats}")
     return (
         f'<div class="card graph-card"><div class="graph-head">'
         f'<h3>{escape(title)}</h3><span class="graph-stats">{escape(stats)}</span></div>'
         f'<p class="graph-note">{escape(note)}</p>{graph}{_legend()}{extra}</div>'
+    )
+
+
+def _normalization_section(trace):
+    events = {event["id"]: event for event in trace["events"]}
+    translated = [
+        entry
+        for entry in trace.get("normalizations", [])
+        if entry["translated"]
+    ]
+    passthrough = sum(
+        not entry["translated"]
+        for entry in trace.get("normalizations", [])
+    )
+    rows = "".join(
+        f"<tr><td>{escape(entry['source'])}</td>"
+        f"<td>{escape(_event_label(events[entry['source']]))}</td>"
+        f"<td>{escape(entry['result'])}</td>"
+        f"<td>{escape(_event_label(events[entry['result']]))}</td></tr>"
+        for entry in translated
+    )
+    table = (
+        f"<table><tr><th>Source ID</th><th>Source</th><th>Result ID</th>"
+        f"<th>Translated representation</th></tr>{rows}</table>"
+        if rows else "<p class=\"empty\">No events required translation.</p>"
+    )
+    return (
+        f"<section><h2>Representation translation</h2><div class=\"card\">{table}"
+        f"<p class=\"note\">{passthrough} events passed through unchanged.</p>"
+        f"</div></section>"
     )
 
 
@@ -333,11 +387,39 @@ def _round_block(entry, records, events):
         f"{escape(signed(events[event_id]['variable'], events[event_id]['level']))}</p>"
         for event_id in entry.get("homeostatic_closures", [])
     )
+    not_reexpanded = "".join(
+        f"<p class=\"note\">Not re-expanded: "
+        f"{escape(signed(events[event_id]['variable'], events[event_id]['level']))}</p>"
+        for event_id in entry.get("not_reexpanded", [])
+    )
+    routing = _routing_block(entry["routing"], events)
     agent_blocks = "".join(_agent_block(record, events) for record in records)
 
     return (
         f"<details><summary>Round {index}<span class=\"tag\">{escape(agents)}</span></summary>"
-        f"<div class=\"body\">{dropped}{closures}{agent_blocks}</div></details>"
+        f"<div class=\"body\">{dropped}{closures}{not_reexpanded}{routing}"
+        f"{agent_blocks}</div></details>"
+    )
+
+
+def _routing_block(routing, events_by_id):
+    trace = routing["trace"]
+    cost = f"{trace['total_tokens']:,} tokens" if trace else "rule-based"
+    call = _call_block(trace) if trace else ""
+    rows = "".join(
+        f"<tr><td>{escape(decision['event'])}</td>"
+        f"<td>{escape(_event_label(events_by_id[decision['event']]))}</td>"
+        f"<td>{escape(', '.join(decision['selected_agents']) or 'no agents')}</td></tr>"
+        for decision in routing["decisions"]
+    )
+    table = (
+        f"<table><tr><th>ID</th><th>Event</th><th>Agents</th></tr>{rows}</table>"
+        if rows else "<p class=\"empty\">No events to route.</p>"
+    )
+    return (
+        f"<details class=\"inner\"><summary>Router"
+        f"<span class=\"tag\">{len(routing['decisions'])} events · {cost}</span></summary>"
+        f"<div class=\"body\">{table}{call}</div></details>"
     )
 
 
@@ -357,13 +439,17 @@ def _agent_block(record, events_by_id):
         f"<table><tr><th>ID</th><th>Event</th><th>Caused by</th></tr>{events}</table>"
         if events else "<p class=\"empty\">No events emitted.</p>"
     )
-    cost = f"{trace['total_tokens']:,} tokens" if trace else "deterministic"
-    call = _call_block(trace) if trace else ""
+    cost = f"{trace['total_tokens']:,} tokens"
+    call = _call_block(trace)
     return (
         f"<details class=\"inner\"><summary>{escape(record['agent'])}"
         f"<span class=\"tag\">← {escape(incoming)} · {cost}</span></summary>"
         f"<div class=\"body\">{table}{call}</div></details>"
     )
+
+
+def _event_label(event):
+    return event["agent_id"] + "." + signed(event["variable"], event["level"])
 
 
 CALL_PARTS = (

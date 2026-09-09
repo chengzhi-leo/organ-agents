@@ -20,7 +20,7 @@ meta_agent:
   enabled: true
 
 routing:
-  mode: llm
+  mode: rule_based
 
 simulation:
   max_rounds: 10
@@ -32,4 +32,5 @@ debug:
   save_trace: true
 
 output:
-  directory: outputs/experiments/physiology_mvp_meta
+  directory: outputs/experiments/full_body_comparison
+  arm: meta_rule_based

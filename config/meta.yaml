@@ -1,0 +1,19 @@
+llm_config: config/run.yaml
+catalog: config/bodies/body.yaml
+shared: config/bodies/blood.yaml
+
+cases:
+  - ground_truth: data/ground_truth/gt_mvp/gt_01_hyperglycemia_insulin.json
+  - ground_truth: data/ground_truth/gt_mvp/gt_02_hypoglycemia_glucagon.json
+  - ground_truth: data/ground_truth/gt_mvp/gt_03_insulin_deficiency_glucosuria.json
+  - ground_truth: data/ground_truth/gt_mvp/gt_04_hyperosmolarity_adh.json
+  - ground_truth: data/ground_truth/gt_mvp/gt_05_hyperkalemia_aldosterone.json
+  - ground_truth: data/ground_truth/gt_mvp/gt_06_acute_stress_catecholamine.json
+  - ground_truth: data/ground_truth/gt_mvp/gt_07_hypotension_raas.json
+  - ground_truth: data/ground_truth/gt_mvp/gt_08_chronic_stress_glucocorticoid.json
+  - ground_truth: data/ground_truth/gt_mvp/gt_09_ghrh_growth_hormone.json
+  - ground_truth: data/ground_truth/gt_mvp/gt_10_hypocalcemia_pth.json
+  - ground_truth: data/ground_truth/gt_mvp/gt_11_tsh_thyroid_feedback.json
+  - ground_truth: data/ground_truth/gt_mvp/gt_12_calcitonin_calcium_lowering.json
+
+output: outputs/experiments/meta_agent

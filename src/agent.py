@@ -9,9 +9,9 @@ Rules:
 - Perform only one causal step from the incoming events.
 - Report only changes within this component.
 - The provided local physiological knowledge is reliable but may be incomplete. Supplement it with your established physiological knowledge when necessary.
-- Use only variables listed under Allowed output variables.
+- Use only variables listed under Owned variables.
 - Each change must be directly caused by exactly one incoming event and must cite its event ID.
-- If no incoming event directly causes an allowed output, return an empty changes list.
+- If no incoming event directly causes a change to an owned variable, return an empty changes list.
 
 Return JSON only:
 
@@ -26,16 +26,13 @@ Return JSON only:
 
 
 class Agent:
-    uses_llm = True
-
-    def __init__(self, id, description, knowledge, inputs, outputs, llm):
+    def __init__(self, id, description, knowledge, owned_variables, llm):
         self.id = id
         self.description = description
         self.knowledge = knowledge
-        self.inputs = inputs
-        self.outputs = outputs
+        self.owned_variables = owned_variables
         self.llm = llm
-        self.response_model = changes_model(id, outputs)
+        self.response_model = changes_model(id, owned_variables)
 
     def react(self, events):
         completion = self.llm.generate(
@@ -47,38 +44,32 @@ class Agent:
 
     def _prompt(self, events):
         arriving = "\n".join(
-            f"{event.id}: {event.variable} = {event.level}"
+            f"{event.id}: {event.agent_id}.{event.variable} = {event.level}"
             for event in events
         )
         prompt = (
             f"Your component: {self.id}\n"
             f"{self.description}\n\n"
             f"Your local physiological knowledge:\n{self.knowledge}\n\n"
-            f"Accepted input variables:\n{', '.join(self.inputs)}\n\n"
-            f"Allowed output variables:\n{', '.join(self.outputs)}\n\n"
+            f"Owned variables:\n{', '.join(self.owned_variables)}\n\n"
         )
         return f"{prompt}Incoming events:\n{arriving}"
 
 
-class Blood:
-    uses_llm = False
+class BloodTranslator:
+    id = "blood"
 
-    def __init__(self, id, outputs, transforms):
-        self.id = id
-        self.outputs = outputs
+    def __init__(self, owned_variables, transforms):
+        self.owned_variables = owned_variables
         self.transforms = {transform.source: transform for transform in transforms}
 
-    def react(self, events):
-        changes = []
-        for event in events:
-            transform = self.transforms.get(event.variable)
-            if transform is None:
-                continue
-            direction = transform.direction
-            level = event.level if direction == "same" else FLIP[event.level]
-            changes.append(Change(
-                variable=transform.target,
-                level=level,
-                caused_by=event.id,
-            ))
-        return Reaction(changes, None)
+    def translate(self, event):
+        transform = self.transforms.get(event.variable)
+        if transform is None:
+            return None
+        level = event.level if transform.direction == "same" else FLIP[event.level]
+        return Change(
+            variable=transform.target,
+            level=level,
+            caused_by=event.id,
+        )

@@ -17,7 +17,7 @@ body:
   knowledge: knowledge
 
 meta_agent:
-  enabled: true
+  enabled: false
 
 routing:
   mode: llm
@@ -32,4 +32,5 @@ debug:
   save_trace: true
 
 output:
-  directory: outputs/experiments/physiology_mvp_meta
+  directory: outputs/experiments/full_body_comparison
+  arm: no_meta_llm

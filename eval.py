@@ -208,11 +208,13 @@ def main():
     parser = argparse.ArgumentParser(description="Score a canonical pathway graph against ground truth")
     parser.add_argument("--pathway", type=Path, required=True)
     parser.add_argument("--truth", type=Path, required=True)
-    parser.add_argument("--schema", type=Path, required=True)
+    parser.add_argument("--schema", type=Path, nargs="+", required=True)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    schema = SystemSchema.model_validate(yaml.safe_load(args.schema.read_text()))
+    schema = SystemSchema.compose(
+        yaml.safe_load(path.read_text()) for path in args.schema
+    )
     result = evaluate(
         load_graph(args.pathway, schema),
         load_graph(args.truth, schema),

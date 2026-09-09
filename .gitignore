@@ -56,10 +56,12 @@ Thumbs.db
 
 # Local-only
 .claude/
+.codex/
+.agents/
 AGENTS.md
-knowledge/
 
 # Local secret backups
 .env.bak*
 docs/
 archive/
+utils/book_extract/

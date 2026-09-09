@@ -1,0 +1,49 @@
+blood:
+  owned_variables: [circulating_insulin, circulating_glucagon, circulating_adh,
+    circulating_aldosterone, circulating_catecholamines, circulating_acth,
+    circulating_glucocorticoids, circulating_ghrh, circulating_growth_hormone,
+    circulating_igf, circulating_renin, circulating_angiotensin_i,
+    circulating_angiotensin_ii, circulating_pth, circulating_calcitriol,
+    circulating_tsh, circulating_thyroid_hormones, circulating_calcitonin,
+    circulating_fatty_acids, circulating_potassium, circulating_sodium,
+    blood_glucose, blood_volume, blood_pressure, blood_calcium,
+    plasma_osmolality]
+
+  transforms:
+    - {source: insulin_secretion, target: circulating_insulin, direction: same}
+    - {source: glucagon_secretion, target: circulating_glucagon, direction: same}
+    - {source: adh_release, target: circulating_adh, direction: same}
+    - {source: aldosterone_secretion, target: circulating_aldosterone, direction: same}
+    - {source: catecholamine_secretion, target: circulating_catecholamines, direction: same}
+    - {source: acth_secretion, target: circulating_acth, direction: same}
+    - {source: glucocorticoid_secretion, target: circulating_glucocorticoids, direction: same}
+
+    - {source: ghrh_secretion, target: circulating_ghrh, direction: same}
+    - {source: growth_hormone_secretion, target: circulating_growth_hormone, direction: same}
+    - {source: igf_production, target: circulating_igf, direction: same}
+
+    - {source: renin_release, target: circulating_renin, direction: same}
+    - {source: circulating_renin, target: circulating_angiotensin_i, direction: same}
+    - {source: angiotensin_ii_formation, target: circulating_angiotensin_ii, direction: same}
+
+    - {source: pth_secretion, target: circulating_pth, direction: same}
+    - {source: calcitriol_formation, target: circulating_calcitriol, direction: same}
+    - {source: calcitonin_secretion, target: circulating_calcitonin, direction: same}
+
+    - {source: tsh_secretion, target: circulating_tsh, direction: same}
+    - {source: thyroid_hormone_secretion, target: circulating_thyroid_hormones, direction: same}
+
+    - {source: lipolysis, target: circulating_fatty_acids, direction: same}
+
+    - {source: glucose_uptake, target: blood_glucose, direction: opposite}
+    - {source: glucose_release, target: blood_glucose, direction: same}
+
+    - {source: sodium_reabsorption, target: blood_volume, direction: same}
+    - {source: water_reabsorption, target: blood_volume, direction: same}
+    - {source: blood_volume, target: blood_pressure, direction: same}
+
+    - {source: bone_resorption, target: blood_calcium, direction: same}
+    - {source: bone_formation, target: blood_calcium, direction: opposite}
+    - {source: calcium_reabsorption, target: blood_calcium, direction: same}
+    - {source: calcium_excretion, target: blood_calcium, direction: opposite}
+    - {source: calcium_absorption, target: blood_calcium, direction: same}

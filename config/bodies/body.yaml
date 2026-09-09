@@ -1,0 +1,82 @@
+external_sources:
+  system: [acute_stress, prolonged_stress]
+
+agents:
+
+  hypothalamus:
+    description: Neuroendocrine component that senses systemic state and coordinates autonomic and hormonal responses.
+    knowledge: hypothalamus.md
+    inputs: [plasma_osmolality, acute_stress, prolonged_stress]
+    owned_variables: [adh_release_signal, sympathetic_signal, acth_release_signal, ghrh_secretion]
+
+  pituitary:
+    description: Pituitary component that releases endocrine hormones in response to hypothalamic and circulating signals.
+    knowledge: pituitary.md
+    inputs: [adh_release_signal, acth_release_signal, circulating_ghrh, circulating_thyroid_hormones]
+    owned_variables: [adh_release, acth_secretion, growth_hormone_secretion, tsh_secretion]
+
+  pancreas:
+    description: Endocrine pancreas that regulates blood glucose through insulin and glucagon secretion.
+    knowledge: pancreas.md
+    inputs: [blood_glucose, circulating_catecholamines]
+    owned_variables: [insulin_secretion, glucagon_secretion]
+
+  adrenal_gland:
+    description: Endocrine organ that releases aldosterone, catecholamines, and glucocorticoids.
+    knowledge: adrenal_gland.md
+    inputs: [circulating_potassium, sympathetic_signal, circulating_acth, circulating_angiotensin_ii]
+    owned_variables: [aldosterone_secretion, catecholamine_secretion, glucocorticoid_secretion]
+
+  liver:
+    description: Organ that regulates glucose uptake, utilization, storage, production, release, and growth-factor production.
+    knowledge: liver.md
+    inputs: [blood_glucose, circulating_insulin, circulating_glucagon, circulating_catecholamines, circulating_glucocorticoids, circulating_growth_hormone, glycogen_synthesis, glycogenolysis, gluconeogenesis]
+    owned_variables: [glucose_uptake, glucose_release, glucose_utilization, glycogen_synthesis, glycogenolysis, gluconeogenesis, igf_production]
+
+  skeletal_muscle:
+    description: Contractile tissue that takes up and utilizes glucose, stores or mobilizes local glycogen, and supports protein synthesis.
+    knowledge: skeletal_muscle.md
+    inputs: [blood_glucose, circulating_insulin, circulating_catecholamines, circulating_igf, glycogen_synthesis, glycogenolysis, amino_acid_uptake]
+    owned_variables: [glucose_uptake, glucose_utilization, glycogen_synthesis, glycogenolysis, amino_acid_uptake, protein_synthesis]
+
+  kidney:
+    description: Organ that regulates filtration, solute handling, electrolyte balance, water balance, calcium balance, and renin secretion.
+    knowledge: kidney.md
+    inputs: [blood_glucose, blood_volume, blood_pressure, plasma_osmolality, circulating_adh, circulating_aldosterone, circulating_catecholamines, circulating_potassium, circulating_pth, circulating_calcitonin, GFR, glucose_reabsorption, sodium_reabsorption, water_reabsorption]
+    owned_variables: [GFR, renin_release, glucose_reabsorption, urinary_glucose_excretion, sodium_reabsorption, water_reabsorption, potassium_secretion, urine_output, calcium_reabsorption, calcium_excretion, calcitriol_formation]
+
+  adipose_tissue:
+    description: Metabolic tissue that stores and mobilizes energy in response to hormonal signals.
+    knowledge: adipose_tissue.md
+    inputs: [circulating_insulin, circulating_glucagon, circulating_catecholamines, circulating_glucocorticoids, circulating_growth_hormone]
+    owned_variables: [lipolysis]
+
+  lung:
+    description: Pulmonary component that participates in angiotensin conversion.
+    knowledge: lung.md
+    inputs: [circulating_angiotensin_i]
+    owned_variables: [angiotensin_ii_formation]
+
+  small_intestine:
+    description: Intestinal component responsible for nutrient and mineral absorption.
+    knowledge: intestine.md
+    inputs: [circulating_calcitriol]
+    owned_variables: [calcium_absorption]
+
+  parathyroid:
+    description: Endocrine gland that regulates blood calcium through parathyroid hormone secretion.
+    knowledge: parathyroid.md
+    inputs: [blood_calcium]
+    owned_variables: [pth_secretion]
+
+  bone:
+    description: Skeletal component that regulates calcium storage and release through bone formation and resorption.
+    knowledge: bone.md
+    inputs: [circulating_pth, circulating_calcitonin]
+    owned_variables: [bone_resorption, bone_formation]
+
+  thyroid:
+    description: Endocrine gland that produces thyroid hormones and calcitonin.
+    knowledge: thyroid.md
+    inputs: [circulating_tsh]
+    owned_variables: [thyroid_hormone_secretion, calcitonin_secretion]

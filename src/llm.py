@@ -1,8 +1,10 @@
 import hashlib
+import json
 import os
 import threading
 from pathlib import Path
 
+import tiktoken
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -10,8 +12,6 @@ from google.genai import types
 from src.schemas import Completion
 
 load_dotenv(Path(__file__).parent.parent / ".env")
-
-MAX_CONTEXT_TOKENS = 200_000
 
 
 class LLM:
@@ -26,17 +26,21 @@ class LLM:
         self.cache_ttl = config["model"]["cache_ttl"] if self.cache_system_prompts else None
         self.temperature = config["generation"]["temperature"]
         self.max_output_tokens = config["generation"]["max_output_tokens"]
-        if not 0 < self.max_output_tokens <= MAX_CONTEXT_TOKENS:
+        token_counting = config["token_counting"]
+        self.encoding = tiktoken.get_encoding(token_counting["encoding"])
+        self.max_context_tokens = token_counting["max_context_tokens"]
+        if not 0 < self.max_output_tokens <= self.max_context_tokens:
             raise ValueError(
-                f"max_output_tokens must be between 1 and {MAX_CONTEXT_TOKENS:,}"
+                "max_output_tokens must be positive and no greater than "
+                "max_context_tokens"
             )
         self.call_count = 0
         self.caches = {}
         self.lock = threading.Lock()
 
     def generate(self, system_prompt, user_prompt, response_model):
+        self._validate_token_budget(system_prompt, user_prompt, response_model)
         generation = self._generation_settings(response_model)
-        self._validate_token_budget(system_prompt, user_prompt, generation)
         anchor = (
             {"cached_content": self._cache(system_prompt)}
             if self.cache_system_prompts
@@ -54,15 +58,24 @@ class LLM:
             raise RuntimeError(f"{self.model} returned an empty response for:\n{user_prompt}")
 
         usage = response.usage_metadata
+        if usage is None:
+            raise RuntimeError(f"{self.model} returned no token usage metadata")
+        required_usage = (
+            usage.prompt_token_count,
+            usage.candidates_token_count,
+            usage.total_token_count,
+        )
+        if any(value is None for value in required_usage):
+            raise RuntimeError(f"{self.model} returned incomplete token usage metadata")
         completion = Completion(
             response_model.model_validate_json(response.text),
             system_prompt,
             user_prompt,
             response.text,
-            usage.prompt_token_count or 0,
+            usage.prompt_token_count,
             usage.cached_content_token_count or 0,
-            usage.candidates_token_count or 0,
-            usage.total_token_count or 0,
+            usage.candidates_token_count,
+            usage.total_token_count,
         )
         with self.lock:
             self.call_count += 1
@@ -76,23 +89,23 @@ class LLM:
             "response_schema": response_model,
         }
 
-    def _validate_token_budget(self, system_prompt, user_prompt, generation):
-        usage = self.client.models.count_tokens(
-            model=self.model,
-            contents=user_prompt,
-            config=types.CountTokensConfig(
-                system_instruction=system_prompt,
-                generation_config=types.GenerationConfig(**generation),
-            ),
+    def _validate_token_budget(self, system_prompt, user_prompt, response_model):
+        response_schema = json.dumps(
+            response_model.model_json_schema(),
+            ensure_ascii=False,
+            separators=(",", ":"),
         )
-        if usage.total_tokens is None:
-            raise RuntimeError(f"{self.model} did not return an input token count")
-        request_tokens = usage.total_tokens + self.max_output_tokens
-        if request_tokens > MAX_CONTEXT_TOKENS:
+        input_tokens = sum(
+            len(self.encoding.encode(part))
+            for part in (system_prompt, user_prompt, response_schema)
+        )
+        request_tokens = input_tokens + self.max_output_tokens
+        if request_tokens > self.max_context_tokens:
             raise ValueError(
-                f"{self.model} request budget {request_tokens:,} exceeds the "
-                f"{MAX_CONTEXT_TOKENS:,}-token context limit "
-                f"({usage.total_tokens:,} input + {self.max_output_tokens:,} max output)"
+                f"tiktoken request estimate {request_tokens:,} exceeds the configured "
+                f"{self.max_context_tokens:,}-token context limit "
+                f"({input_tokens:,} input/schema + "
+                f"{self.max_output_tokens:,} max output)"
             )
 
     def _cache(self, system_prompt):
