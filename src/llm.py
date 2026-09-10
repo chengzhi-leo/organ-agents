@@ -126,3 +126,17 @@ class LLM:
                 system_instruction=system_prompt, ttl=self.cache_ttl, display_name=label
             ),
         ).name
+
+
+def summarize_usage(completions):
+    return {
+        "llm_calls": len(completions),
+        "prompt_tokens": sum(completion.prompt_tokens for completion in completions),
+        "cached_tokens": sum(completion.cached_tokens for completion in completions),
+        "output_tokens": sum(completion.output_tokens for completion in completions),
+        "total_tokens": sum(completion.total_tokens for completion in completions),
+        "max_tokens_per_call": max(
+            (completion.total_tokens for completion in completions),
+            default=0,
+        ),
+    }

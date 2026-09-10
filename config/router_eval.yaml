@@ -1,9 +1,0 @@
-llm_config: config/run.yaml
-dataset: data/router/gt_mvp_oracle_scope.json
-knowledge: knowledge
-router:
-  mode: llm
-evaluation:
-  mode: atomic
-  workers: 4
-output: outputs/experiments/router

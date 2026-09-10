@@ -1,0 +1,7 @@
+{
+  "scenario_id": "pressure_case_01_raas_aldosterone",
+  "input": {"agent_id": "blood", "variable": "blood_pressure", "level": "decreased"},
+  "output": [
+    {"agent_id": "blood", "variable": "blood_pressure", "level": "increased"}
+  ]
+}

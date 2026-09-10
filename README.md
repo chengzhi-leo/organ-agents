@@ -1,33 +1,65 @@
 # organ-agents
 
-## Vision
+organ-agents builds compact, executable causal graphs from collaborating physiological agents. For
+each scenario, the system knows only an initial perturbation and the desired terminal output states.
+It iteratively changes the agent topology until the predicted output is correct and the graph is as
+simple as possible.
 
-organ-agents is a research system for building mechanistic, whole-body models of physiology with collaborating AI agents. Its long-term purpose is to help turn biological evidence into testable clinical hypotheses: explain how an intervention changes the body, identify the most consequential downstream effects, and prioritize predictions for expert or experimental validation.
+## Pipeline
 
-## Core idea
+The Meta Agent selects at most the configured number of agents and creates an initial directed
+execution graph. A graph edge is the complete communication contract: after agent A emits a local
+change and Blood translates its representation, the event can reach agent B only when `A -> B`
+exists. There is no Router.
 
-Physiology is distributed: a perturbation first changes molecular or cellular processes in one location, then propagates through endocrine, immune, neural, and vascular communication, producing remote-organ and whole-body phenotypes. A useful model must preserve this locality while making cross-organ causality explicit.
+A forward run produces an event-level causal pathway and terminal outputs. The Critic compares those
+outputs with the target, judges the graph's `nodes + edges` complexity, and decides whether a mutated
+candidate is better than the incumbent. The Meta Agent then proposes one to three graph operations.
+`main.py` repeats this loop while retaining only Critic-approved improvements.
 
-Each organ or tissue agent therefore owns a constrained local vocabulary of states, mechanisms, and outputs. Shared Blood translates declared local outputs into circulating signals. Starting from an intervention or physiological perturbation, the system reconstructs a canonical causal graph across these boundaries. The graph is inspectable, comparable with ground truth, and suitable for evidence-based critique rather than being a free-form explanation.
+The runtime never loads the reference causal graph. Each file under `data/scenarios/` contains one
+scenario ID, one initial perturbation, and the requested final output states.
 
-## Research roadmap
+## Run
 
-### Phase 1: Recover established pathways
+Use the `evo` conda environment:
 
-The immediate goal is to faithfully reproduce classic physiological pathways and mechanistic simulators from textbooks and established literature. This phase evaluates whether the system can select the right components, preserve causal direction, represent feedback and parallel branches, and recover known whole-body responses from a defined perturbation.
+```bash
+conda run --no-capture-output -n evo python main.py \
+  --config config/run.yaml \
+  --scenario data/scenarios/gt_mvp/glucose_case_01.json
+```
 
-Success here establishes a reliable substrate: local agent boundaries, shared representations, evaluation graphs, and failure analysis must all work before asking the system to reason beyond known answers.
+The scenario file is the only experiment input passed to `main.py`; its input and output share one
+`scenario_id` by construction. Each run saves the best execution graph, its predicted pathway, the
+complete optimization history, per-iteration artifacts, usage totals, and an HTML report under the
+configured output directory.
 
-### Phase 2: Extend beyond the knowledge cutoff
+```json
+{
+  "scenario_id": "glucose_case_01",
+  "input": {
+    "agent_id": "blood",
+    "variable": "blood_glucose",
+    "level": "increased"
+  },
+  "output": [
+    {
+      "agent_id": "blood",
+      "variable": "blood_glucose",
+      "level": "decreased"
+    }
+  ]
+}
+```
 
-Once the system can recover established mechanisms, it should incorporate post-cutoff research and identify mechanistic updates that a static model would miss. The objective is not merely to retrieve newer papers, but to connect new findings to the existing causal model and determine their consequences across organs and scales.
+## Core contracts
 
-Candidate discoveries should be traceable to their supporting evidence, distinguish inference from observation, and state the conditions under which they are expected to hold.
+- `config/bodies/body.yaml`: fixed local-agent registry and interfaces
+- `config/bodies/blood.yaml`: deterministic shared Blood transformations
+- `config/run.yaml`: model, forward, optimization, and output budgets
+- `src/schemas.py`: strict runtime schemas
+- `docs/architecture.md`: execution and optimization semantics
 
-### Phase 3: Generate and validate novel hypotheses
-
-The longer-term ambition is to propose plausible, previously unreported findings: a local molecular or cellular effect that propagates through tissue and systemic communication into a distinctive whole-body outcome. These hypotheses must be explicit enough for clinicians and experimentalists to assess, falsify, and validate.
-
-## Toward virtual clinical trials
-
-This framework supports virtual clinical trials. A model can represent how a drug or intervention changes a local mechanism, trace the resulting cross-organ cascade, and surface candidate benefits, risks, biomarkers, or phenotypes. The aim is not to replace clinical judgment or experiments, but to make mechanistic reasoning more systematic and to focus real-world validation on the most informative hypotheses.
+The result is named `best_found`: it is the best graph discovered within the configured mutation and
+patience budget, not a proof of global optimality.

@@ -1,0 +1,9 @@
+{
+  "scenario_id": "growth_case_01_gh",
+  "input": {"agent_id": "hypothalamus", "variable": "ghrh_secretion", "level": "increased"},
+  "output": [
+    {"agent_id": "blood", "variable": "circulating_fatty_acids", "level": "increased"},
+    {"agent_id": "blood", "variable": "blood_glucose", "level": "increased"},
+    {"agent_id": "skeletal_muscle", "variable": "protein_synthesis", "level": "increased"}
+  ]
+}

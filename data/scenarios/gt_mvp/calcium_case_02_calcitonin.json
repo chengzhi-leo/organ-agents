@@ -1,0 +1,7 @@
+{
+  "scenario_id": "calcium_case_02_calcitonin",
+  "input": {"agent_id": "thyroid", "variable": "calcitonin_secretion", "level": "increased"},
+  "output": [
+    {"agent_id": "blood", "variable": "blood_calcium", "level": "decreased"}
+  ]
+}

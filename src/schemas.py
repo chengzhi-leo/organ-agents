@@ -5,6 +5,15 @@ from pydantic import BaseModel, ConfigDict, create_model, model_validator
 
 Level = Literal["decreased", "increased"]
 EventType = Literal["input", "response"]
+OperationType = Literal[
+    "ADD_AGENT",
+    "REMOVE_AGENT",
+    "ADD_EDGE",
+    "REMOVE_EDGE",
+    "REPLACE_AGENT",
+    "REVERSE_EDGE",
+]
+INPUT_NODE = "INPUT"
 
 FLIP = {"increased": "decreased", "decreased": "increased"}
 
@@ -37,37 +46,6 @@ def changes_model(agent_id, owned_variables):
     )
 
 
-def routing_model(event_ids, agent_ids):
-    if not event_ids:
-        raise ValueError("LLM router requires at least one event")
-    if not agent_ids:
-        raise ValueError("LLM router requires at least one available agent")
-    event_id = Literal.__getitem__(tuple(event_ids))
-    agent_id = Literal.__getitem__(tuple(agent_ids))
-    route = create_model(
-        "routing_route",
-        __base__=StrictModel,
-        event_id=(event_id, ...),
-        agent_ids=(list[agent_id], ...),
-    )
-    return create_model(
-        "routing",
-        __base__=StrictModel,
-        routes=(list[route], ...),
-    )
-
-
-def agent_selection_model(agent_ids):
-    if not agent_ids:
-        raise ValueError("agent selection requires at least one available agent")
-    agent_id = Literal.__getitem__(tuple(agent_ids))
-    return create_model(
-        "agent_selection",
-        __base__=StrictModel,
-        agents=(list[agent_id], ...),
-    )
-
-
 class GraphEvent(StrictModel):
     id: str
     agent_id: str
@@ -76,16 +54,161 @@ class GraphEvent(StrictModel):
     type: EventType
 
 
-class ScenarioInput(StrictModel):
-    scenario_id: str
+class OutputState(StrictModel):
     agent_id: str
     variable: str
     level: Level
 
 
+class Scenario(StrictModel):
+    scenario_id: str
+    input: OutputState
+    output: list[OutputState]
+
+    @model_validator(mode="after")
+    def validate_output(self):
+        keys = [output_key(output) for output in self.output]
+        if not keys:
+            raise ValueError("scenario output must not be empty")
+        if len(keys) != len(set(keys)):
+            raise ValueError("scenario outputs must be unique")
+        return self
+
+
 class GraphEdge(StrictModel):
     source: str
     target: str
+
+
+class ExecutionEdge(StrictModel):
+    source: str
+    target: str
+
+
+class ExecutionGraph(StrictModel):
+    scenario_id: str
+    nodes: list[str]
+    edges: list[ExecutionEdge]
+
+    @property
+    def complexity(self):
+        return len(self.nodes) + len(self.edges)
+
+    def validate_for(self, agent_ids, max_agents, allow_cycles, allow_self_edges):
+        known_agents = set(agent_ids)
+        nodes = set(self.nodes)
+        if len(self.nodes) != len(nodes):
+            raise ValueError("execution graph nodes must be unique")
+        if unknown := nodes - known_agents:
+            raise ValueError(f"execution graph references unknown agents: {sorted(unknown)}")
+        if len(nodes) > max_agents:
+            raise ValueError(
+                f"execution graph selects {len(nodes)} agents, maximum is {max_agents}"
+            )
+
+        edge_keys = [(edge.source, edge.target) for edge in self.edges]
+        if len(edge_keys) != len(set(edge_keys)):
+            raise ValueError("execution graph edges must be unique")
+        for edge in self.edges:
+            if edge.source != INPUT_NODE and edge.source not in nodes:
+                raise ValueError(f"unknown execution edge source '{edge.source}'")
+            if edge.target not in nodes:
+                raise ValueError(f"unknown execution edge target '{edge.target}'")
+            if edge.source == edge.target and not allow_self_edges:
+                raise ValueError("execution graph self-edges are disabled")
+
+        reachable = {INPUT_NODE}
+        while True:
+            expanded = reachable | {
+                edge.target for edge in self.edges if edge.source in reachable
+            }
+            if expanded == reachable:
+                break
+            reachable = expanded
+        if unreachable := nodes - reachable:
+            raise ValueError(f"execution graph has unreachable agents: {sorted(unreachable)}")
+        if not allow_cycles:
+            self._validate_acyclic()
+        return self
+
+    def _validate_acyclic(self):
+        outgoing = {}
+        for edge in self.edges:
+            if edge.source != INPUT_NODE:
+                outgoing.setdefault(edge.source, []).append(edge.target)
+
+        visiting = set()
+        visited = set()
+
+        def visit(node):
+            if node in visiting:
+                raise ValueError("execution graph cycles are disabled")
+            if node in visited:
+                return
+            visiting.add(node)
+            for target in outgoing.get(node, []):
+                visit(target)
+            visiting.remove(node)
+            visited.add(node)
+
+        for node in self.nodes:
+            visit(node)
+        return self
+
+
+class ExecutionGraphDraft(StrictModel):
+    nodes: list[str]
+    edges: list[ExecutionEdge]
+
+
+class GraphOperation(StrictModel):
+    type: OperationType
+    agent_id: str | None = None
+    replacement_agent_id: str | None = None
+    source: str | None = None
+    target: str | None = None
+
+    @model_validator(mode="after")
+    def validate_fields(self):
+        required = {
+            "ADD_AGENT": {"agent_id"},
+            "REMOVE_AGENT": {"agent_id"},
+            "ADD_EDGE": {"source", "target"},
+            "REMOVE_EDGE": {"source", "target"},
+            "REPLACE_AGENT": {"agent_id", "replacement_agent_id"},
+            "REVERSE_EDGE": {"source", "target"},
+        }[self.type]
+        values = {
+            "agent_id": self.agent_id,
+            "replacement_agent_id": self.replacement_agent_id,
+            "source": self.source,
+            "target": self.target,
+        }
+        present = {name for name, value in values.items() if value is not None}
+        if present != required:
+            raise ValueError(
+                f"{self.type} requires exactly these fields: {sorted(required)}"
+            )
+        return self
+
+
+class MutationPlan(StrictModel):
+    operations: list[GraphOperation]
+
+
+class InitialCritique(StrictModel):
+    prediction_matches_output: bool
+    analysis: str
+    next_recommendation: str
+
+
+class CandidateCritique(InitialCritique):
+    accept_candidate: bool
+    decision_reason: str
+
+
+def output_key(output):
+    return output.agent_id, output.variable, output.level
 
 
 class Source(StrictModel):
@@ -219,6 +342,15 @@ class SystemSchema(StrictModel):
                 raise ValueError(
                     f"blood transform target '{transform.target}' is not owned by blood"
                 )
+        transforms = {transform.source: transform.target for transform in self.blood.transforms}
+        for source in transforms:
+            visited = set()
+            variable = source
+            while variable in transforms:
+                if variable in visited:
+                    raise ValueError(f"blood transforms contain a cycle at '{variable}'")
+                visited.add(variable)
+                variable = transforms[variable]
         return self
 
     def interface(self, component_id):

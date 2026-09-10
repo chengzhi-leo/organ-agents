@@ -1,0 +1,7 @@
+{
+  "scenario_id": "stress_case_02_glucocorticoid",
+  "input": {"agent_id": "system", "variable": "prolonged_stress", "level": "increased"},
+  "output": [
+    {"agent_id": "blood", "variable": "circulating_fatty_acids", "level": "increased"}
+  ]
+}

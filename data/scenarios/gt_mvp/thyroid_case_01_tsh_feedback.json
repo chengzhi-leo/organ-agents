@@ -1,0 +1,7 @@
+{
+  "scenario_id": "thyroid_case_01_tsh_feedback",
+  "input": {"agent_id": "pituitary", "variable": "tsh_secretion", "level": "increased"},
+  "output": [
+    {"agent_id": "pituitary", "variable": "tsh_secretion", "level": "decreased"}
+  ]
+}

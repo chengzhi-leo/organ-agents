@@ -44,6 +44,11 @@ outputs/
 archive/glucose_simulator/model/
 archive/glucose_simulator/results/
 
+!data/
+data/*
+!data/scenarios/
+!data/scenarios/**
+
 # Credentials
 service-account.json
 
@@ -65,3 +70,8 @@ AGENTS.md
 docs/
 archive/
 utils/book_extract/
+
+!docs/
+docs/*
+!docs/architecture.md
+!docs/evaluation.md

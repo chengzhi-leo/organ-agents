@@ -1,0 +1,8 @@
+{
+  "scenario_id": "glucose_case_03_diabetes_renal",
+  "input": {"agent_id": "pancreas", "variable": "insulin_secretion", "level": "decreased"},
+  "output": [
+    {"agent_id": "kidney", "variable": "urinary_glucose_excretion", "level": "increased"},
+    {"agent_id": "kidney", "variable": "urine_output", "level": "increased"}
+  ]
+}

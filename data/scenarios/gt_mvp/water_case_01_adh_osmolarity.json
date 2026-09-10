@@ -1,0 +1,7 @@
+{
+  "scenario_id": "water_case_01_adh_osmolarity",
+  "input": {"agent_id": "blood", "variable": "plasma_osmolality", "level": "increased"},
+  "output": [
+    {"agent_id": "kidney", "variable": "urine_output", "level": "decreased"}
+  ]
+}

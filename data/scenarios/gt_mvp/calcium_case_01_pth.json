@@ -1,0 +1,7 @@
+{
+  "scenario_id": "calcium_case_01_pth",
+  "input": {"agent_id": "blood", "variable": "blood_calcium", "level": "decreased"},
+  "output": [
+    {"agent_id": "blood", "variable": "blood_calcium", "level": "increased"}
+  ]
+}

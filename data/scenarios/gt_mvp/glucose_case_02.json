@@ -1,0 +1,7 @@
+{
+  "scenario_id": "glucose_case_02",
+  "input": {"agent_id": "blood", "variable": "blood_glucose", "level": "decreased"},
+  "output": [
+    {"agent_id": "blood", "variable": "blood_glucose", "level": "increased"}
+  ]
+}

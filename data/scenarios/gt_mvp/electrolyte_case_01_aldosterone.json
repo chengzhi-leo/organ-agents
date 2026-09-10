@@ -1,0 +1,8 @@
+{
+  "scenario_id": "electrolyte_case_01_aldosterone",
+  "input": {"agent_id": "blood", "variable": "circulating_potassium", "level": "increased"},
+  "output": [
+    {"agent_id": "kidney", "variable": "potassium_secretion", "level": "increased"},
+    {"agent_id": "blood", "variable": "blood_volume", "level": "increased"}
+  ]
+}

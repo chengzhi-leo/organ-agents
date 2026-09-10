@@ -16,20 +16,23 @@ body:
   shared: config/bodies/blood.yaml
   knowledge: knowledge
 
-meta_agent:
-  enabled: true
+optimization:
+  max_agents: 6
+  max_mutations: 10
+  min_operations_per_mutation: 1
+  max_operations_per_mutation: 3
+  patience: 3
+  rollouts_per_candidate: 1
+  allow_cycles: true
+  allow_self_edges: true
 
-routing:
-  mode: llm
-
-simulation:
+forward:
   max_rounds: 10
   max_llm_calls: 80
   workers: 1
 
 debug:
   verbose: true
-  save_trace: true
 
 output:
-  directory: outputs/experiments/physiology_mvp_meta
+  directory: outputs/experiments/graph_optimization
