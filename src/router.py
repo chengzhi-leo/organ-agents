@@ -4,17 +4,22 @@ from dataclasses import dataclass
 from src.schemas import Completion, routing_model
 
 ROUTER_SYSTEM_PROMPT = """
-You route a batch of physiological events to locally relevant components.
+You route a batch of physiological events to their direct local recipients.
 
-For each input event, select every available agent that may directly perceive or locally respond to that event.
+For each input event, select the smallest set of available agents for which this exact event can directly cause a local physiological response in the next single causal step.
 
-Treat each event independently. An event may be routed to zero, one, or multiple agents.
+Use each agent's owned_variables as its local response space. Select an agent when the input event can directly change at least one of those variables in the next causal step.
+
+A direct local response may occur within the source agent itself. Include the source agent when the event can directly cause another local change in that same agent. Do not assume that an event emitted by an agent has completed all local causal processing.
+
+Preserve causal intermediates. Never route an event directly to a downstream agent by skipping a required intermediate signal.
+
+Treat each event independently. An event may be routed to zero, one, or multiple agents. Prefer an empty agent_ids list over speculative routing.
 
 Return exactly one route for every input event.
 Preserve each event_id exactly as provided.
 Do not omit, duplicate, merge, or invent events.
 Select agent_ids only from the available agents.
-Use an empty agent_ids list when no available agent is relevant.
 The top-level object must contain only routes. Each route must contain only event_id and agent_ids.
 
 Do not predict physiological effects, variables, directions, mechanisms, or downstream events. Route each event as-is.
@@ -85,7 +90,9 @@ class LLMRouter:
         self.agents_by_id = {agent.id: agent for agent in self.agents}
         self.llm = llm
         catalog = "\n".join(
-            f"- {agent.id}: {agent.description}"
+            f"- {agent.id}\n"
+            f"  description: {agent.description}\n"
+            f"  owned_variables: {', '.join(agent.owned_variables)}"
             for agent in self.agents
         )
         self.system_prompt = f"{ROUTER_SYSTEM_PROMPT}\nAvailable agents:\n{catalog}"
